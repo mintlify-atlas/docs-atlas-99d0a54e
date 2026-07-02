@@ -1,0 +1,213 @@
+---
+title: "Checkout API — Submit Orders with Payment"
+sidebarTitle: "Checkout"
+description: "POST /api/v1/checkout — creates an order with items, shipping, and a pending payment record. Supports guest and authenticated checkout with server-side price calculation."
+---
+
+The checkout endpoint is the core of the purchase flow. It accepts the buyer details, recipient address, cart items, and payment method, then atomically creates an order, decrements product stock, records status history, and creates a pending payment — all within a single database transaction. Both guest shoppers (no session) and authenticated users are supported.
+
+<Warning>
+  **Prices and totals are always calculated server-side.** Never send price data in the checkout request body. The server loads each product's `amountMinor` from the database, resolves the correct price for the requested currency, and computes `subtotalMinor`, `shippingMinor`, and `totalMinor` itself. Any price fields sent by the client are silently ignored.
+</Warning>
+
+<Note>
+  **Guest checkout is fully supported.** If no valid session cookie is present in the request, the resulting order is created with `userId: null`. Guests cannot later view their orders via the Orders API — for order lookup, the `orderNumber` returned at checkout is the only reference.
+</Note>
+
+---
+
+## Submit an order
+
+Creates a new order for the provided cart. The server validates stock levels, resolves the shipping rate for the destination province and currency, and then runs the full transaction. Up to 5 retries are attempted automatically if an `orderNumber` collision occurs.
+
+```bash
+curl -X POST https://api.avanzarintimeshop.com/api/v1/checkout \
+  -H "Content-Type: application/json" \
+  -d '{
+    "currency": "USD",
+    "buyer": {
+      "name": "Carlos Pérez",
+      "email": "carlos@example.com",
+      "phone": "+1-305-555-0100"
+    },
+    "recipient": {
+      "name": "María García",
+      "phone": "+53-52345678",
+      "province": "La Habana",
+      "municipality": "Plaza de la Revolución",
+      "addressLine": "Calle 23 #456 entre J e I, Vedado",
+      "reference": "Edificio azul, apartamento 3B"
+    },
+    "items": [
+      { "productId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890", "quantity": 1 }
+    ],
+    "payment": {
+      "method": "zelle"
+    }
+  }'
+```
+
+### Request body
+
+<ParamField body="currency" type="string" required>
+  ISO 4217 currency code, exactly 3 characters (e.g., `"USD"`, `"CUP"`). All order amounts — subtotal, shipping, and total — will be calculated in this currency. A matching shipping rate for this currency and the recipient province must exist.
+</ParamField>
+
+<ParamField body="buyer" type="object" required>
+  Details of the person placing and paying for the order. This data is stored as an immutable snapshot on the order.
+
+  <Expandable title="buyer fields">
+    <ParamField body="buyer.name" type="string" required>
+      Full name of the buyer (the person who pays). Minimum 1 character.
+    </ParamField>
+    <ParamField body="buyer.email" type="string" required>
+      Valid email address for order confirmation and communication.
+    </ParamField>
+    <ParamField body="buyer.phone" type="string" required>
+      Contact phone number for the buyer. Minimum 1 character.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="recipient" type="object" required>
+  Delivery details for the person receiving the order in Cuba. Stored as an immutable snapshot — editing the address book later does not affect existing orders.
+
+  <Expandable title="recipient fields">
+    <ParamField body="recipient.name" type="string" required>
+      Full name of the person receiving the delivery. Minimum 1 character.
+    </ParamField>
+    <ParamField body="recipient.phone" type="string" required>
+      Local phone number for delivery coordination. Minimum 1 character.
+    </ParamField>
+    <ParamField body="recipient.province" type="string" required>
+      Cuban province for the delivery destination (e.g., `"La Habana"`). **Must match a province with an active shipping rate for the chosen currency** — otherwise the request fails with `SHIPPING_NOT_SUPPORTED`.
+    </ParamField>
+    <ParamField body="recipient.municipality" type="string" required>
+      Municipality within the province (e.g., `"Plaza de la Revolución"`). Minimum 1 character.
+    </ParamField>
+    <ParamField body="recipient.addressLine" type="string" required>
+      Full street address including number, street name, and neighborhood. Minimum 1 character.
+    </ParamField>
+    <ParamField body="recipient.reference" type="string">
+      Optional landmark or delivery hint (e.g., `"Edificio azul, apartamento 3B"`). Helps delivery agents locate the destination.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="items" type="array" required>
+  Cart contents. Must contain at least one item. Each entry references a product by its UUID and specifies the desired quantity.
+
+  <Expandable title="item fields">
+    <ParamField body="items[].productId" type="string (UUID)" required>
+      The UUID of the product to purchase. The product must exist and have `active` status.
+    </ParamField>
+    <ParamField body="items[].quantity" type="integer" required>
+      Number of units to purchase. Must be a positive integer (≥ 1). The server verifies there is sufficient stock before committing the transaction.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="payment" type="object" required>
+  Payment method selection. Payment confirmation is done manually by store staff after verifying the transfer.
+
+  <Expandable title="payment fields">
+    <ParamField body="payment.method" type="string (enum)" required>
+      One of: `"cod"` (cash on delivery), `"transfer_local"` (local Cuban bank transfer), `"zelle"` (Zelle transfer from abroad). The payment record is created with `status: "pending"` and confirmed manually by an admin.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Response
+
+**`201 Created`** — order and payment created successfully.
+
+<ResponseField name="order" type="Order" required>
+  The newly created order with all computed totals and snapshot fields.
+
+  <Expandable title="Order fields">
+    <ResponseField name="id" type="string (UUID)">Unique order identifier.</ResponseField>
+    <ResponseField name="orderNumber" type="string">Human-readable order reference (e.g., `"ORD-20241115-A3F2"`). Unique across all orders.</ResponseField>
+    <ResponseField name="userId" type="string | null">ID of the authenticated user, or `null` for guest orders.</ResponseField>
+    <ResponseField name="status" type="string">Always `"pending_payment"` immediately after checkout.</ResponseField>
+    <ResponseField name="currency" type="string">The currency code used for this order.</ResponseField>
+    <ResponseField name="subtotalMinor" type="integer">Sum of all line totals, in cents.</ResponseField>
+    <ResponseField name="shippingMinor" type="integer">Shipping cost for the destination province and currency, in cents.</ResponseField>
+    <ResponseField name="discountMinor" type="integer">Total discount applied, in cents. `0` unless a discount was applied.</ResponseField>
+    <ResponseField name="totalMinor" type="integer">Final amount due (`subtotalMinor + shippingMinor - discountMinor`), in cents.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="payment" type="Payment" required>
+  The pending payment record created for this order.
+
+  <Expandable title="Payment fields">
+    <ResponseField name="id" type="string (UUID)">Unique payment identifier.</ResponseField>
+    <ResponseField name="orderId" type="string (UUID)">Reference to the parent order.</ResponseField>
+    <ResponseField name="method" type="string">The payment method selected: `cod`, `transfer_local`, or `zelle`.</ResponseField>
+    <ResponseField name="status" type="string">Always `"pending"` at creation. Transitions to `"confirmed"` or `"rejected"` by admin action.</ResponseField>
+    <ResponseField name="amountMinor" type="integer">Amount to be paid, in cents. Equals `order.totalMinor`.</ResponseField>
+    <ResponseField name="currency" type="string">Currency of the payment amount.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+**Example response — `201 Created`**
+
+```json
+{
+  "order": {
+    "id": "ord-0001-0000-0000-0000-000000000001",
+    "orderNumber": "ORD-20241115-A3F2",
+    "userId": null,
+    "status": "pending_payment",
+    "currency": "USD",
+    "buyerName": "Carlos Pérez",
+    "buyerEmail": "carlos@example.com",
+    "buyerPhone": "+1-305-555-0100",
+    "shipRecipient": "María García",
+    "shipPhone": "+53-52345678",
+    "shipProvince": "La Habana",
+    "shipMunicipality": "Plaza de la Revolución",
+    "shipAddressLine": "Calle 23 #456 entre J e I, Vedado",
+    "shipReference": "Edificio azul, apartamento 3B",
+    "subtotalMinor": 4999,
+    "shippingMinor": 500,
+    "discountMinor": 0,
+    "totalMinor": 5499,
+    "createdAt": "2024-11-15T14:22:10.000Z",
+    "updatedAt": "2024-11-15T14:22:10.000Z"
+  },
+  "payment": {
+    "id": "pay-0001-0000-0000-0000-000000000001",
+    "orderId": "ord-0001-0000-0000-0000-000000000001",
+    "method": "zelle",
+    "status": "pending",
+    "amountMinor": 5499,
+    "currency": "USD",
+    "reference": null,
+    "confirmedBy": null,
+    "confirmedAt": null,
+    "createdAt": "2024-11-15T14:22:10.000Z",
+    "updatedAt": "2024-11-15T14:22:10.000Z"
+  }
+}
+```
+
+### Error codes
+
+| HTTP | Code | Description |
+|------|------|-------------|
+| `422` | `INSUFFICIENT_STOCK` | One or more requested items has less stock than the requested quantity. The `productId` of the first offending item is included in the error body. |
+| `422` | `SHIPPING_NOT_SUPPORTED` | No active shipping rate exists for the combination of `recipient.province` and `currency`. The `province` is included in the error body. |
+| `422` | `PRODUCT_NOT_FOUND` | One or more `productId` values in `items` do not exist in the catalog. |
+| `422` | `PRODUCT_NOT_ACTIVE` | One or more products referenced in `items` exists but is in `draft` or `archived` status. |
+| `503` | `ORDER_NUMBER_COLLISION` | The server failed to generate a unique order number after 5 attempts. Retry the request. |
+
+**Example error — `422 Unprocessable Entity`**
+
+```json
+{
+  "error": "INSUFFICIENT_STOCK",
+  "code": "INSUFFICIENT_STOCK",
+  "productId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+}
+```

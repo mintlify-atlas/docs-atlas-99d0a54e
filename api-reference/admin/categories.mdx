@@ -1,0 +1,166 @@
+---
+title: "Admin Categories API — Category CRUD Endpoints"
+sidebarTitle: "Categories"
+description: "Admin endpoints for creating, updating, and deleting product categories with optional hierarchy via parentId. Requires admin or staff role."
+---
+
+The admin categories API provides full CRUD over the product taxonomy. Categories support an optional hierarchy: each category can reference a `parentId` pointing to another category, allowing you to build trees of arbitrary depth (e.g. "Watches" → "Automatic" → "Dive Watches"). Categories are linked to products via the `product_categories` join table — those links cascade automatically when a category is deleted.
+
+<Note>
+  All endpoints in this section require the `admin` or `staff` role. Requests without a valid session return **401**; requests with insufficient role return **403**.
+</Note>
+
+---
+
+## Endpoints
+
+### List Categories
+
+<br />
+
+```
+GET /api/v1/admin/categories
+```
+
+Returns all categories ordered alphabetically by `name`. No pagination is applied — the full list is returned on every request. The response does not include nested product counts; use the product endpoints to query products by category.
+
+**Response `200`**
+
+```json
+{
+  "categories": [
+    {
+      "id": "cat-11aa22bb-ccdd-eeff-0011-223344556677",
+      "slug": "automaticos",
+      "name": "Automáticos",
+      "parentId": "cat-parent-uuid-here"
+    },
+    {
+      "id": "cat-aabb1122-3344-5566-7788-99aabbccddee",
+      "slug": "relojes",
+      "name": "Relojes",
+      "parentId": null
+    }
+  ]
+}
+```
+
+---
+
+### Create Category
+
+<br />
+
+```
+POST /api/v1/admin/categories
+```
+
+Creates a new category. The `slug` should be unique and URL-safe. Optionally supply a `parentId` to nest this category under an existing one.
+
+**Request Body**
+
+<ParamField body="slug" type="string" required>
+  URL-safe identifier for the category (e.g. `relojes-automaticos`). Used in storefront filter URLs.
+</ParamField>
+
+<ParamField body="name" type="string" required>
+  Human-readable display name shown in navigation and filters (e.g. `"Relojes Automáticos"`).
+</ParamField>
+
+<ParamField body="parentId" type="string">
+  UUID of an existing parent category. Omit or pass `null` to create a top-level category.
+</ParamField>
+
+**Example Request**
+
+```bash
+curl -X POST https://api.avanzarintimeshop.com/api/v1/admin/categories \
+  -H "Content-Type: application/json" \
+  -H "Cookie: session=<your-session-cookie>" \
+  -d '{
+    "slug": "relojes-automaticos",
+    "name": "Relojes Automáticos",
+    "parentId": "cat-aabb1122-3344-5566-7788-99aabbccddee"
+  }'
+```
+
+**Response `201`**
+
+```json
+{
+  "category": {
+    "id": "cat-11aa22bb-ccdd-eeff-0011-223344556677",
+    "slug": "relojes-automaticos",
+    "name": "Relojes Automáticos",
+    "parentId": "cat-aabb1122-3344-5566-7788-99aabbccddee"
+  }
+}
+```
+
+---
+
+### Update Category
+
+<br />
+
+```
+PATCH /api/v1/admin/categories/:id
+```
+
+Partially updates a category. All body fields are optional — only the fields you include will be changed. You can reparent a category by updating `parentId`.
+
+**Request Body** — all fields optional
+
+<ParamField body="slug" type="string">
+  New URL slug for the category.
+</ParamField>
+
+<ParamField body="name" type="string">
+  New display name.
+</ParamField>
+
+<ParamField body="parentId" type="string">
+  UUID of the new parent category, or `null` to promote to top-level.
+</ParamField>
+
+**Response `200`**
+
+```json
+{
+  "category": {
+    "id": "cat-11aa22bb-ccdd-eeff-0011-223344556677",
+    "slug": "relojes-automaticos",
+    "name": "Relojes Automáticos — Edición Especial",
+    "parentId": "cat-aabb1122-3344-5566-7788-99aabbccddee"
+  }
+}
+```
+
+**Error responses:** `404` if the category ID does not exist.
+
+---
+
+### Delete Category
+
+<br />
+
+```
+DELETE /api/v1/admin/categories/:id
+```
+
+Permanently (hard) deletes a category. Returns **204 No Content** on success.
+
+<Warning>
+  This is a **hard delete** — the category row is permanently removed from the database. The database cascade automatically removes all `product_categories` rows that link products to this category, effectively unlinking every product from it. The products themselves are **not** deleted and remain in the catalog. Rebuild category assignments after a delete if needed.
+</Warning>
+
+**Example Request**
+
+```bash
+curl -X DELETE https://api.avanzarintimeshop.com/api/v1/admin/categories/cat-11aa22bb-ccdd-eeff-0011-223344556677 \
+  -H "Cookie: session=<your-session-cookie>"
+```
+
+**Response `204`** — empty body.
+
+**Error responses:** `404` if the category ID does not exist.

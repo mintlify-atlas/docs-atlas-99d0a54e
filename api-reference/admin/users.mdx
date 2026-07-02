@@ -1,0 +1,163 @@
+---
+title: "Admin Users API — User Listing and Role Management"
+sidebarTitle: "Users"
+description: "Admin endpoints for listing users and updating roles. Only non-sensitive fields are returned. Admins cannot demote themselves to prevent accidental lockout."
+---
+
+The admin users API exposes a safe, read-optimized view of the customer and staff base, as well as the ability to promote or demote user roles. Password hashes, session tokens, and other sensitive auth fields are never included in responses — only the seven safe columns selected server-side. Role management allows you to onboard new staff, revoke access, and promote trusted customers to admin, all from a single endpoint.
+
+<Note>
+  All endpoints in this section require the `admin` or `staff` role. Requests without a valid session return **401**; requests with insufficient role return **403**.
+</Note>
+
+---
+
+## Endpoints
+
+### List Users
+
+<br />
+
+```
+GET /api/v1/admin/users
+```
+
+Returns all users with only non-sensitive fields, optionally filtered by role. The response does not include passwords, tokens, or any other auth credentials.
+
+**Query Parameters**
+
+<ParamField query="role" type="string">
+  Filter by user role. One of: `customer`, `staff`, `admin`. Omit to return users of all roles.
+</ParamField>
+
+**Response `200`**
+
+```json
+{
+  "users": [
+    {
+      "id": "usr-11223344-aabb-ccdd-eeff-001122334455",
+      "name": "Ana Rodríguez",
+      "email": "ana@example.com",
+      "role": "customer",
+      "emailVerified": true,
+      "image": "https://cdn.example.com/avatars/ana.jpg",
+      "createdAt": "2024-01-15T09:00:00.000Z"
+    },
+    {
+      "id": "usr-aabbccdd-eeff-0011-2233-445566778899",
+      "name": "Carlos Méndez",
+      "email": "carlos@avanzarintimeshop.com",
+      "role": "staff",
+      "emailVerified": true,
+      "image": null,
+      "createdAt": "2024-02-01T08:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+### Update User Role
+
+<br />
+
+```
+PATCH /api/v1/admin/users/:id/role
+```
+
+Promotes or demotes a user's role. The authenticated admin's own ID is compared to the target `:id` — if they match and the new role is not `admin`, the request is rejected to prevent accidental self-lockout.
+
+**Request Body**
+
+<ParamField body="role" type="string" required>
+  The new role to assign. One of: `customer`, `staff`, `admin`.
+
+  - `customer` — standard shopper, no admin panel access
+  - `staff` — can access all admin routes including user management
+  - `admin` — full access, including the ability to manage other admins
+</ParamField>
+
+**Example Request**
+
+```bash
+curl -X PATCH https://api.avanzarintimeshop.com/api/v1/admin/users/usr-11223344-aabb-ccdd-eeff-001122334455/role \
+  -H "Content-Type: application/json" \
+  -H "Cookie: session=<your-session-cookie>" \
+  -d '{ "role": "staff" }'
+```
+
+**Response `200`** — returns only the safe user fields.
+
+```json
+{
+  "user": {
+    "id": "usr-11223344-aabb-ccdd-eeff-001122334455",
+    "name": "Ana Rodríguez",
+    "email": "ana@example.com",
+    "role": "staff",
+    "emailVerified": true,
+    "image": "https://cdn.example.com/avatars/ana.jpg",
+    "createdAt": "2024-01-15T09:00:00.000Z"
+  }
+}
+```
+
+**Error Responses**
+
+<Expandable title="404 — User Not Found">
+  ```json
+  { "error": "Usuario no encontrado" }
+  ```
+  No user with the given ID exists.
+</Expandable>
+
+<Expandable title="422 — Self-Demotion Attempt">
+  ```json
+  { "error": "No podés quitarte tu propio rol de admin" }
+  ```
+  The authenticated admin attempted to change their own role to something other than `admin`. Use a different admin account to demote yourself.
+</Expandable>
+
+---
+
+## Safe User Response Fields
+
+<ResponseField name="id" type="string">
+  UUID of the user.
+</ResponseField>
+
+<ResponseField name="name" type="string | null">
+  Display name of the user, if provided during registration.
+</ResponseField>
+
+<ResponseField name="email" type="string">
+  Email address used for login and order notifications.
+</ResponseField>
+
+<ResponseField name="role" type="string">
+  Current role. One of: `customer`, `staff`, `admin`.
+</ResponseField>
+
+<ResponseField name="emailVerified" type="boolean">
+  Whether the user has verified their email address. Unverified users may have limited checkout access depending on store configuration.
+</ResponseField>
+
+<ResponseField name="image" type="string | null">
+  URL of the user's profile avatar, if set (typically populated via OAuth providers). `null` if not set.
+</ResponseField>
+
+<ResponseField name="createdAt" type="string">
+  ISO 8601 timestamp of when the user account was created.
+</ResponseField>
+
+---
+
+<Note>
+  **Self-demotion guard:** The backend checks whether the `:id` in the route matches the `id` of the currently authenticated session user. If they match and the requested role is anything other than `admin`, the request is rejected with **422** before touching the database. To demote your own account, have another admin perform the update, or temporarily promote a second account to admin first.
+</Note>
+
+<Warning>
+  **The `staff` role grants broad admin access.** Staff users can access every admin route — including listing users, updating roles, confirming payments, and managing orders. Only grant the `staff` role to team members you fully trust. Treat it with the same care as the `admin` role; the primary difference is that staff cannot manage other admins through the UI (role update business logic may enforce this in future versions).
+</Warning>

@@ -1,0 +1,48 @@
+---
+title: "Avanzar In Time Shop: E-Commerce Platform Overview"
+sidebarTitle: "Introduction"
+description: "Avanzar In Time Shop is a self-hosted full-stack e-commerce platform with manual payment confirmation, guest checkout, and role-based access control."
+---
+
+Avanzar In Time Shop is a self-hosted, full-stack e-commerce platform built for developers who need complete ownership of their storefront infrastructure. It ships as a Bun monorepo containing three production-ready apps — a Hono REST API, a React admin dashboard, and an Astro public storefront — wired together through two shared packages that enforce type-safe validation and a single database schema across every layer. Designed with the Cuban market in mind, the platform supports province-based shipping configuration and manual payment verification workflows (cash on delivery, local bank transfer, and Zelle), making it practical for regions where automated payment gateways are unavailable or unreliable.
+
+## Apps and Packages
+
+<CardGroup cols={2}>
+  <Card title="@avanzar/backend" icon="server">
+    Hono v4 REST API running on port 3000. Handles authentication via Better Auth, all business logic, and exposes interactive OpenAPI docs at `/api/v1/docs`.
+  </Card>
+  <Card title="@avanzar/admin" icon="layout-dashboard">
+    React 19 admin SPA on port 5174. Built with TanStack Query, Radix UI, and Tailwind v4 for managing products, orders, payments, users, and shipping zones.
+  </Card>
+  <Card title="@avanzar/storefront" icon="store">
+    Astro v6 public storefront on port 4321. Serves the customer-facing catalog, cart, and checkout experience with island-based interactivity.
+  </Card>
+  <Card title="@avanzar/shared" icon="package">
+    Zod v4 validation schemas shared across all apps. Covers checkout, orders, products, addresses, payments, shipping, and users — the single source of validation truth.
+  </Card>
+</CardGroup>
+
+<Note>
+  Once the backend is running, interactive API documentation is available at `http://localhost:3000/api/v1/docs` via the Swagger UI powered by `@hono/swagger-ui`.
+</Note>
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Runtime & package manager | Bun ≥1.0 |
+| API framework | Hono v4 |
+| Authentication | Better Auth v1 (email + password, cookie sessions) |
+| ORM & migrations | Drizzle ORM + drizzle-kit |
+| Database | PostgreSQL 17 (Docker) |
+| Admin UI | React 19 + TanStack Query v5 + Radix UI + Tailwind v4 |
+| Storefront | Astro v6 |
+| Validation | Zod v4 |
+| TypeScript config | ESNext target, `bundler` module resolution |
+
+## Who Is This For?
+
+Avanzar In Time Shop is aimed at developers and small teams who want to self-host a complete e-commerce stack without relying on SaaS platforms or automated payment processors. Its payment model is intentionally manual — staff members confirm transfers and Zelle payments through the admin dashboard before an order advances in the fulfillment pipeline — which makes it well-suited to markets where card processing is limited or trust in automated systems is low.
+
+The platform was built with the Cuban market as its primary use case. Province-based shipping rates, local bank transfer as a first-class payment method, and a staff role with scoped permissions all reflect the operational realities of running an online shop in that context. That said, the architecture is general-purpose: any operator who needs a self-hosted shop with manual payment workflows and a clean admin interface will find it straightforward to adapt.

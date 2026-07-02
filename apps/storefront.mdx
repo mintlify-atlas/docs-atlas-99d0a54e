@@ -1,0 +1,93 @@
+---
+title: "Storefront: Astro-Powered Public Shop"
+sidebarTitle: "Storefront"
+description: "The Avanzar storefront is an Astro v6 app serving the public product catalog and checkout experience, running on port 4321 in development."
+---
+
+The Avanzar storefront is an [Astro v6](https://astro.build) application that serves the public-facing side of the shop — the product catalog, category browsing, and the checkout flow. It consumes the Avanzar backend API directly and is intentionally minimal: the repository ships a working skeleton that connects all the pieces end-to-end, giving developers a clean foundation to build their own UI on top of without inheriting any opinionated design system or component library.
+
+## Running the Storefront
+
+Start the Astro dev server from the monorepo root:
+
+```bash
+bun run dev:storefront
+```
+
+The dev server listens on **port 4321** (`http://localhost:4321`), which is also the origin whitelisted in the backend CORS configuration.
+
+## Project Structure
+
+```
+apps/storefront/
+├── src/
+│   ├── pages/
+│   │   └── index.astro    # Home page
+│   ├── index.ts           # Shared exports
+│   └── env.d.ts           # TypeScript env types
+├── astro.config.mjs       # Astro configuration
+└── package.json
+```
+
+The Astro config pins the dev server to port `4321`:
+
+```javascript
+// astro.config.mjs
+import { defineConfig } from "astro/config";
+
+export default defineConfig({
+  server: {
+    port: 4321,
+  },
+});
+```
+
+## Backend Integration
+
+The storefront communicates with the Avanzar backend at `http://localhost:3000` in development. Endpoints fall into two categories based on whether they require a session.
+
+**Unauthenticated (open to all visitors)**
+
+No cookie or token is needed to browse the catalog, look up shipping costs, or submit a checkout:
+
+- Product and category listing
+- Single-product detail pages
+- Shipping rate lookups
+- Checkout (order submission)
+
+**Authenticated (session cookie required)**
+
+Order history and saved addresses require the visitor to be signed in. Better Auth stores the session as an `httpOnly` cookie (`better-auth.session_token`), which the browser attaches automatically on requests that set `credentials: "include"`.
+
+<Tip>
+  Guest checkout is fully supported — visitors can place an order via `POST /api/v1/checkout` without creating an account. A user ID is not required in the checkout payload.
+</Tip>
+
+## Key API Endpoints Used
+
+The storefront primarily interacts with the following backend endpoints:
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/v1/products` | Full product catalog listing |
+| `GET` | `/api/v1/products/:slug` | Single product detail by URL slug |
+| `GET` | `/api/v1/categories` | Category tree for navigation |
+| `GET` | `/api/v1/shipping-rates?province=&currency=` | Shipping rate lookup for checkout |
+| `POST` | `/api/v1/checkout` | Submit a new order |
+| `GET` | `/api/v1/orders` | Authenticated user's order history |
+
+All public endpoints return JSON. The checkout endpoint validates the payload with Zod on the backend and responds with `201 Created` on success or a structured `{ error, code }` body on business-rule violations (e.g. insufficient stock, unrecognised shipping zone).
+
+## Building for Production
+
+```bash
+# Build the static output (or SSR bundle, depending on your adapter)
+bun run build
+
+# Preview the production build locally
+bun run preview
+```
+
+<Note>
+  The storefront is intentionally minimal and acts as a starting point rather than a production-ready UI. The home page renders a plain heading out of the box. Developers are expected to build their own pages, components, and styles on top of the backend API — the infrastructure (routing, API contract, auth, checkout logic) is already wired up and ready to use.
+</Note>

@@ -1,0 +1,121 @@
+---
+title: "Order Lifecycle and Status State Machine"
+sidebarTitle: "Order Lifecycle"
+description: "Orders in Avanzar follow a strict state machine from pending_payment through fulfillment, with optimistic-concurrency transitions and a full audit history trail."
+---
+
+Every order in Avanzar In Time Shop progresses through a strict six-status state machine. Transitions are validated against a fixed allow-list — no arbitrary jumps are permitted. Each status change is persisted to an append-only `order_status_history` table so administrators always have a complete, tamper-evident audit trail of who changed what and when.
+
+## Order Statuses
+
+<CardGroup cols={2}>
+  <Card title="pending_payment" icon="clock">
+    The initial state assigned at checkout. The order has been created and is awaiting payment confirmation from an admin. No fulfillment work begins at this stage.
+  </Card>
+  <Card title="paid" icon="circle-check">
+    An admin has verified that payment was received. The order is now cleared for processing and the fulfillment team can begin work.
+  </Card>
+  <Card title="preparing" icon="box-open">
+    Items are actively being picked, packed, and prepared for shipment. The order has not yet left the warehouse.
+  </Card>
+  <Card title="shipped" icon="truck">
+    The parcel has been dispatched to the recipient. Tracking information (if available) may be recorded separately via the admin panel.
+  </Card>
+  <Card title="delivered" icon="house-circle-check">
+    The recipient has confirmed delivery. This is a **terminal state** — no further transitions are allowed.
+  </Card>
+  <Card title="cancelled" icon="circle-xmark">
+    The order has been cancelled. This is a **terminal state**. When an order enters this state, the backend automatically restores stock for all line items that retain a linked `productId`.
+  </Card>
+</CardGroup>
+
+## Allowed Transitions
+
+The following table shows every valid `from → to` transition. Transitions not listed here are rejected by the backend with a `400` error.
+
+| From | Allowed Next States |
+|---|---|
+| `pending_payment` | `paid`, `cancelled` |
+| `paid` | `preparing`, `cancelled` |
+| `preparing` | `shipped`, `cancelled` |
+| `shipped` | `delivered` |
+| `delivered` | *(terminal — none)* |
+| `cancelled` | *(terminal — none)* |
+
+The transition graph is defined in `@avanzar/shared` as the single source of truth, shared by both the backend API and the admin panel frontend:
+
+```typescript
+import { orderStatus } from "@avanzar/db/schema";
+
+export type OrderStatus = (typeof orderStatus.enumValues)[number];
+
+/**
+ * Grafo de transiciones permitidas. Avance hacia adelante; cancelable solo antes
+ * de `shipped`. `delivered` y `cancelled` son terminales. El restock al cancelar
+ * lo aplica el caller (admin/orders), no este módulo puro.
+ */
+export const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
+  pending_payment: ["paid", "cancelled"],
+  paid:            ["preparing", "cancelled"],
+  preparing:       ["shipped", "cancelled"],
+  shipped:         ["delivered"],
+  delivered:       [],
+  cancelled:       [],
+};
+
+/** True si `from -> to` es una transición permitida. */
+export function canTransition(from: OrderStatus, to: OrderStatus): boolean {
+  return ALLOWED_TRANSITIONS[from].includes(to);
+}
+```
+
+Notice that cancellation is only possible **before** the order reaches `shipped`. Once the parcel is in transit, it can only advance to `delivered`.
+
+## Status History
+
+Every time an order transitions to a new status, a record is inserted into the `order_status_history` table. This table is strictly append-only and is never modified or deleted (orders cascade-delete their history only when the order itself is deleted).
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | UUID | Primary key |
+| `orderId` | UUID | References the parent order |
+| `status` | `order_status` | The new status that was applied |
+| `changedBy` | text (nullable) | ID of the admin user who triggered the change |
+| `createdAt` | timestamptz | When the change was recorded |
+
+<Note>
+  `order_status_history` is append-only. Records are never updated or deleted (outside of an order hard-delete). The `changedBy` field stores the admin user ID for full accountability — you can always trace which staff member moved an order into any given state.
+</Note>
+
+## Cancellation and Stock Restoration
+
+When an order is moved to `cancelled`, the backend iterates over every `order_items` row belonging to that order and increments `products.stock_quantity` for each item that still has a non-null `productId`:
+
+```typescript
+// Pseudocode — actual implementation in apps/backend/src/routes/admin/orders.ts
+for (const item of orderItems) {
+  if (item.productId !== null) {
+    await db
+      .update(products)
+      .set({ stockQuantity: sql`stock_quantity + ${item.quantity}` })
+      .where(eq(products.id, item.productId));
+  }
+}
+```
+
+Items whose `productId` has been set to `null` (because the product was later deleted) are skipped — there is nothing to restock. This is why `order_items.productId` uses `ON DELETE SET NULL` rather than `CASCADE`.
+
+## Optimistic Concurrency
+
+To prevent race conditions when two admin users attempt to transition the same order simultaneously, the backend uses a conditional `UPDATE` pattern. The SQL `WHERE` clause includes both the order ID **and** the expected current status:
+
+```sql
+UPDATE orders
+SET    status = :newStatus, updated_at = NOW()
+WHERE  id     = :orderId
+AND    status = :expectedCurrentStatus;
+```
+
+If the `UPDATE` affects **0 rows**, it means the order was already transitioned by another request and the expected status no longer matches. The API returns a `409 Conflict` response, prompting the client to reload the order and re-evaluate whether the intended transition is still valid.
+
+This optimistic approach requires no explicit row-level locks, keeping the database load minimal even under concurrent admin activity.

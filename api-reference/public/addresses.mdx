@@ -1,0 +1,264 @@
+---
+title: "Address Book API — Manage Delivery Addresses"
+sidebarTitle: "Addresses"
+description: "CRUD endpoints for the authenticated user's saved delivery addresses. All address operations are scoped to the current session user."
+---
+
+The address book API lets authenticated users save, update, and delete delivery addresses for faster checkout. All five endpoints are scoped to the current session — users can only read and modify their own addresses. Requests without a valid session cookie are rejected with `401`.
+
+<Note>
+  **Addresses are not referenced by orders.** When a user completes checkout, the delivery details are copied as an immutable snapshot directly onto the order record. This means deleting or editing an address in the address book has **no effect on existing orders** — the original delivery information is permanently preserved on each order.
+</Note>
+
+---
+
+## List addresses
+
+Returns all delivery addresses saved by the authenticated user.
+
+```bash
+curl https://api.avanzarintimeshop.com/api/v1/addresses \
+  -H "Cookie: better-auth.session_token=<your-session-token>"
+```
+
+**Requires:** valid session cookie (`requireSession` middleware).
+
+### Response
+
+<ResponseField name="addresses" type="Address[]" required>
+  All addresses belonging to the authenticated user.
+
+  <Expandable title="Address object">
+    <ResponseField name="id" type="string (UUID)">Unique address identifier.</ResponseField>
+    <ResponseField name="userId" type="string">The owner's user ID. Always matches the authenticated user.</ResponseField>
+    <ResponseField name="recipientName" type="string">Full name of the delivery recipient.</ResponseField>
+    <ResponseField name="phone" type="string">Local phone number for delivery coordination.</ResponseField>
+    <ResponseField name="province" type="string">Cuban province (e.g., `"La Habana"`).</ResponseField>
+    <ResponseField name="municipality" type="string">Municipality within the province.</ResponseField>
+    <ResponseField name="addressLine" type="string">Full street address.</ResponseField>
+    <ResponseField name="reference" type="string | null">Optional landmark or delivery hint.</ResponseField>
+    <ResponseField name="createdAt" type="string (ISO 8601)">Timestamp when the address was saved.</ResponseField>
+    <ResponseField name="updatedAt" type="string (ISO 8601)">Timestamp of the last update.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+**Example response — `200 OK`**
+
+```json
+{
+  "addresses": [
+    {
+      "id": "addr-0001-0000-0000-0000-000000000001",
+      "userId": "user-abc123",
+      "recipientName": "María García",
+      "phone": "+53-52345678",
+      "province": "La Habana",
+      "municipality": "Plaza de la Revolución",
+      "addressLine": "Calle 23 #456 entre J e I, Vedado",
+      "reference": "Edificio azul, apartamento 3B",
+      "createdAt": "2024-10-01T09:00:00.000Z",
+      "updatedAt": "2024-10-01T09:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+## Get a single address
+
+Returns one address by its UUID. Returns `404` if the address does not exist or belongs to a different user.
+
+```bash
+curl https://api.avanzarintimeshop.com/api/v1/addresses/addr-0001-0000-0000-0000-000000000001 \
+  -H "Cookie: better-auth.session_token=<your-session-token>"
+```
+
+**Requires:** valid session cookie (`requireSession` middleware).
+
+### Path parameters
+
+<ParamField path="id" type="string (UUID)" required>
+  Unique identifier of the address to retrieve. Returns `404` if not found or not owned by the authenticated user.
+</ParamField>
+
+**Example response — `200 OK`**
+
+```json
+{
+  "address": {
+    "id": "addr-0001-0000-0000-0000-000000000001",
+    "userId": "user-abc123",
+    "recipientName": "María García",
+    "phone": "+53-52345678",
+    "province": "La Habana",
+    "municipality": "Plaza de la Revolución",
+    "addressLine": "Calle 23 #456 entre J e I, Vedado",
+    "reference": "Edificio azul, apartamento 3B",
+    "createdAt": "2024-10-01T09:00:00.000Z",
+    "updatedAt": "2024-10-01T09:00:00.000Z"
+  }
+}
+```
+
+---
+
+## Create an address
+
+Saves a new delivery address for the authenticated user. Returns the created address with its assigned `id` and timestamps.
+
+```bash
+curl -X POST https://api.avanzarintimeshop.com/api/v1/addresses \
+  -H "Cookie: better-auth.session_token=<your-session-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "recipientName": "María García",
+    "phone": "+53-52345678",
+    "province": "La Habana",
+    "municipality": "Plaza de la Revolución",
+    "addressLine": "Calle 23 #456 entre J e I, Vedado",
+    "reference": "Edificio azul, apartamento 3B"
+  }'
+```
+
+**Requires:** valid session cookie (`requireSession` middleware).
+
+### Request body
+
+<ParamField body="recipientName" type="string" required>
+  Full name of the person who will receive deliveries at this address. Minimum 1 character.
+</ParamField>
+
+<ParamField body="phone" type="string" required>
+  Local Cuban phone number for delivery coordination. Minimum 1 character.
+</ParamField>
+
+<ParamField body="province" type="string" required>
+  Cuban province for the delivery destination (e.g., `"La Habana"`, `"Santiago de Cuba"`). Minimum 1 character.
+</ParamField>
+
+<ParamField body="municipality" type="string" required>
+  Municipality within the selected province (e.g., `"Plaza de la Revolución"`). Minimum 1 character.
+</ParamField>
+
+<ParamField body="addressLine" type="string" required>
+  Full street address including street number, street name, and neighborhood (e.g., `"Calle 23 #456 entre J e I, Vedado"`). Minimum 1 character.
+</ParamField>
+
+<ParamField body="reference" type="string">
+  Optional delivery landmark or hint (e.g., `"Edificio azul, apartamento 3B"`). Helps delivery agents locate the exact destination.
+</ParamField>
+
+**Example response — `201 Created`**
+
+```json
+{
+  "address": {
+    "id": "addr-0002-0000-0000-0000-000000000001",
+    "userId": "user-abc123",
+    "recipientName": "María García",
+    "phone": "+53-52345678",
+    "province": "La Habana",
+    "municipality": "Plaza de la Revolución",
+    "addressLine": "Calle 23 #456 entre J e I, Vedado",
+    "reference": "Edificio azul, apartamento 3B",
+    "createdAt": "2024-11-20T11:30:00.000Z",
+    "updatedAt": "2024-11-20T11:30:00.000Z"
+  }
+}
+```
+
+---
+
+## Update an address
+
+Partially updates an existing address. All fields are optional — only send the fields you want to change. Returns `404` if the address does not exist or is not owned by the authenticated user.
+
+```bash
+curl -X PATCH https://api.avanzarintimeshop.com/api/v1/addresses/addr-0002-0000-0000-0000-000000000001 \
+  -H "Cookie: better-auth.session_token=<your-session-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phone": "+53-55987654",
+    "reference": "Casa verde con reja negra"
+  }'
+```
+
+**Requires:** valid session cookie (`requireSession` middleware).
+
+### Path parameters
+
+<ParamField path="id" type="string (UUID)" required>
+  Unique identifier of the address to update. Returns `404` if not found or not owned by the authenticated user.
+</ParamField>
+
+### Request body
+
+All fields are optional for PATCH. Only provided fields are updated; omitted fields retain their current values.
+
+<ParamField body="recipientName" type="string">
+  Updated recipient name.
+</ParamField>
+<ParamField body="phone" type="string">
+  Updated phone number.
+</ParamField>
+<ParamField body="province" type="string">
+  Updated province.
+</ParamField>
+<ParamField body="municipality" type="string">
+  Updated municipality.
+</ParamField>
+<ParamField body="addressLine" type="string">
+  Updated street address.
+</ParamField>
+<ParamField body="reference" type="string">
+  Updated delivery landmark or hint.
+</ParamField>
+
+**Example response — `200 OK`**
+
+```json
+{
+  "address": {
+    "id": "addr-0002-0000-0000-0000-000000000001",
+    "userId": "user-abc123",
+    "recipientName": "María García",
+    "phone": "+53-55987654",
+    "province": "La Habana",
+    "municipality": "Plaza de la Revolución",
+    "addressLine": "Calle 23 #456 entre J e I, Vedado",
+    "reference": "Casa verde con reja negra",
+    "createdAt": "2024-11-20T11:30:00.000Z",
+    "updatedAt": "2024-11-20T14:15:00.000Z"
+  }
+}
+```
+
+---
+
+## Delete an address
+
+Permanently deletes an address from the user's address book. Returns `204 No Content` on success with an empty body. Returns `404` if the address does not exist or is not owned by the authenticated user.
+
+```bash
+curl -X DELETE https://api.avanzarintimeshop.com/api/v1/addresses/addr-0002-0000-0000-0000-000000000001 \
+  -H "Cookie: better-auth.session_token=<your-session-token>"
+```
+
+**Requires:** valid session cookie (`requireSession` middleware).
+
+### Path parameters
+
+<ParamField path="id" type="string (UUID)" required>
+  Unique identifier of the address to delete. Returns `404` if not found or not owned by the authenticated user.
+</ParamField>
+
+**Response — `204 No Content`**
+
+Empty body. The address has been permanently removed from the address book.
+
+| HTTP | Condition |
+|------|-----------|
+| `204` | Address deleted successfully. |
+| `401` | No valid session cookie. |
+| `404` | Address not found or not owned by the authenticated user. |

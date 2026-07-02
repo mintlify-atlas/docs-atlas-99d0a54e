@@ -1,0 +1,115 @@
+---
+title: "Authentication and Role-Based Access Control"
+sidebarTitle: "Authentication"
+description: "Avanzar In Time Shop uses Better Auth for session-based authentication with three roles: customer, staff, and admin, enforced at the route level."
+---
+
+Avanzar In Time Shop uses [Better Auth](https://better-auth.com) for authentication. The backend enables email and password sign-up and sign-in, issuing session cookies that are verified on every protected request. Better Auth is configured in `apps/backend/src/auth.ts` using the Drizzle adapter, which points directly to the `user`, `session`, `account`, and `verification` tables defined in `@avanzar/db`. The `BETTER_AUTH_SECRET` environment variable is used to sign session tokens, and `BETTER_AUTH_URL` tells Better Auth the base URL of the API for constructing absolute links.
+
+## Auth Endpoints
+
+Better Auth automatically mounts all of its routes under `/api/auth/*` via the Hono handler. You do not need to define these routes manually. The key endpoints used by both the storefront and admin panel are:
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/auth/sign-up/email` | Register a new user account. The `role` field is always set to `customer` server-side — the client cannot supply it. |
+| `POST` | `/api/auth/sign-in/email` | Authenticate with email and password. Returns a `Set-Cookie` header with the session token. |
+| `POST` | `/api/auth/sign-out` | Invalidate the current session cookie and end the session. |
+
+<Warning>
+  The `role` field on the user is declared with `input: false` in the Better Auth configuration. This means the client cannot pass a `role` value during sign-up — any such field in the request body is silently ignored. All new registrations receive the `customer` role by default. Role promotion to `staff` or `admin` must happen server-side, either through the admin panel or the `seed:admin` script.
+</Warning>
+
+## User Roles
+
+The `user_role` PostgreSQL enum defines three roles, enforced at the middleware layer on every protected route:
+
+| Role | Access Level |
+|---|---|
+| `customer` | Default role assigned at sign-up. Can access authenticated endpoints for their own data: orders, addresses, and payment history. |
+| `staff` | Can access all admin routes: product management, order management, payment confirmation, and user listing. |
+| `admin` | Full access, including user role management (`PATCH /admin/users/:id/role`). Can promote or demote any user's role. |
+
+The `isAdminRole` helper from `@avanzar/shared` is the single source of truth for which roles constitute "admin access" across both frontend and backend:
+
+```typescript
+// packages/shared/src/users.ts
+export const ADMIN_ROLES = ["admin", "staff"] as const;
+export type AdminRole = (typeof ADMIN_ROLES)[number];
+
+/** True if the role can access the admin panel. */
+export function isAdminRole(role: string | null | undefined): boolean {
+  return role != null && (ADMIN_ROLES as readonly string[]).includes(role);
+}
+```
+
+## Middleware
+
+Two middleware functions in `apps/backend/src/middlewares/auth.ts` guard protected routes. Both inject the verified `user` and `session` objects into the Hono context variables, making them available to route handlers as `c.get("user")` and `c.get("session")`.
+
+```typescript
+// apps/backend/src/middlewares/auth.ts
+
+/** Requires a valid session. Returns 401 if none. Injects user + session. */
+export const requireSession = createMiddleware<AuthEnv>(async (c, next) => {
+  const result = await auth.api.getSession({ headers: c.req.raw.headers });
+  if (!result) return c.json({ error: "No autenticado" }, 401);
+  c.set("user", result.user);
+  c.set("session", result.session);
+  await next();
+});
+
+/** Requires a valid session AND admin/staff role. 401 without session, 403 without permission. */
+export const requireAdmin = createMiddleware<AuthEnv>(async (c, next) => {
+  const result = await auth.api.getSession({ headers: c.req.raw.headers });
+  if (!result) return c.json({ error: "No autenticado" }, 401);
+  if (!isAdminRole(roleOf(result.user))) {
+    return c.json({ error: "Acceso denegado" }, 403);
+  }
+  c.set("user", result.user);
+  c.set("session", result.session);
+  await next();
+});
+```
+
+Apply `requireSession` to any route that requires a logged-in user (e.g., viewing your own orders). Apply `requireAdmin` to any route restricted to `staff` or `admin` roles (e.g., managing products or confirming payments).
+
+## Creating an Admin User
+
+The `seed:admin` script provides an interactive bootstrap flow to create the first admin account. It prompts for a name, email, and password, calls the Better Auth sign-up API, then immediately promotes the user's role to `admin` via a direct database update. The script is idempotent — if the email already exists, it skips sign-up and only updates the role.
+
+Run it from the **monorepo root**:
+
+```bash
+bun run seed:admin
+```
+
+The script delegates to `apps/backend/src/scripts/create-admin.ts` with the monorepo `.env` file loaded. You will be prompted interactively:
+
+```
+Nombre del admin: Jane Doe
+Email: jane@example.com
+Password (mínimo 8 caracteres): ••••••••
+✅ jane@example.com es ahora admin (role=admin).
+```
+
+<Note>
+  `prompt()` in Bun does not mask the password input. The `seed:admin` script is intended for local bootstrapping only — do not run it in shared or production terminal sessions where the password could be visible to others.
+</Note>
+
+## CORS Configuration
+
+The Better Auth instance declares two trusted origins in `apps/backend/src/auth.ts`. Requests from these origins are permitted to send credentials (session cookies):
+
+```typescript
+trustedOrigins: [
+  "http://localhost:4321", // storefront (Astro)
+  "http://localhost:5174", // admin (Vite)
+],
+```
+
+Both origins have `credentials: true` behaviour implicitly, which is required for the browser to send and store the session cookie across the frontend-to-backend boundary.
+
+<Note>
+  Before deploying to production, update the `trustedOrigins` array in `apps/backend/src/auth.ts` to include your live frontend URLs. Requests from unlisted origins will have their credentials rejected by Better Auth, causing all session-based calls to fail.
+</Note>

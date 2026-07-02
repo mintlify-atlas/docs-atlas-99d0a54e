@@ -1,47 +1,144 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with Avanzar In Time Shop"
+sidebarTitle: "Quickstart"
+description: "Set up the full Avanzar In Time Shop stack locally — database, backend, admin dashboard, and storefront — in under 10 minutes."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
+This quickstart walks you through cloning the repository, configuring your environment, spinning up the PostgreSQL database via Docker, running migrations, seeding an admin user, and launching all three apps together. By the end you will have the backend API, admin dashboard, and public storefront running locally and ready for development.
 
 ## Prerequisites
 
-Before you begin, you must have:
+<Note>
+  Before you begin, make sure the following tools are installed on your machine:
+  - **Bun ≥1.0** — [bun.sh](https://bun.sh)
+  - **Docker** (with the Compose plugin) — [docs.docker.com](https://docs.docker.com/get-docker/)
+  - **Git**
+</Note>
 
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+## Setup
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
-
+  <Step title="Clone the repository">
     ```bash
-    npm install your-package
+    git clone https://github.com/ItsJhonAlex/Ecommerce.git && cd Ecommerce
     ```
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+
+  <Step title="Install dependencies">
+    Install all workspace dependencies from the monorepo root in a single command:
 
     ```bash
-    your-cli init
+    bun install
+    ```
+
+    Bun resolves workspaces declared under `apps/*` and `packages/*` and hoists shared dependencies automatically.
+  </Step>
+
+  <Step title="Configure environment variables">
+    Copy the example environment file and edit the values to match your local setup:
+
+    ```bash
+    cp .env.example .env
+    ```
+
+    The `.env` file at the monorepo root is shared by all apps via `--env-file=../../.env`:
+
+    | Variable | Default | Purpose |
+    |---|---|---|
+    | `POSTGRES_USER` | `avanzar` | PostgreSQL username |
+    | `POSTGRES_PASSWORD` | `changeme` | PostgreSQL password — **change this** |
+    | `POSTGRES_DB` | `avanzar` | Database name |
+    | `POSTGRES_HOST_PORT` | `5433` | Host port mapped to the container's 5432 |
+    | `DATABASE_URL` | `postgres://avanzar:changeme@localhost:5433/avanzar` | Full connection string used by Drizzle |
+    | `PORT` | `3000` | Hono backend listen port |
+    | `BETTER_AUTH_SECRET` | `changeme` | Secret key for session signing — **generate a strong value** |
+    | `BETTER_AUTH_URL` | `http://localhost:3000` | Public base URL of the backend, used by Better Auth |
+
+    Generate a strong `BETTER_AUTH_SECRET` with:
+
+    ```bash
+    bun -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
     ```
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+
+  <Step title="Start the PostgreSQL database">
+    Launch the PostgreSQL 17 container in the background:
 
     ```bash
-    your-cli start
+    bun run db:up
     ```
+
+    This runs `docker compose up -d`. The container is named `avanzar_postgres` and exposes the database on the host port defined by `POSTGRES_HOST_PORT` (default `5433`). A Docker volume named `avanzar_pgdata` persists data across restarts.
+  </Step>
+
+  <Step title="Run database migrations">
+    Apply all Drizzle migrations to the running database:
+
+    ```bash
+    bun run db:migrate
+    ```
+
+    This delegates to `drizzle-kit migrate` inside the `@avanzar/db` package, creating all tables, enums, and constraints defined in the schema.
+  </Step>
+
+  <Step title="Create an admin user">
+    Seed the initial admin account using the bootstrap script:
+
+    ```bash
+    bun run seed:admin
+    ```
+
+    This executes `apps/backend/src/scripts/create-admin.ts` and creates a user with the `admin` role. Follow the prompts in your terminal to set the email and password.
+  </Step>
+
+  <Step title="Start all apps">
+    Start the backend, storefront, and admin dashboard in parallel from the monorepo root:
+
+    ```bash
+    bun run dev
+    ```
+
+    <Tip>
+      Hot reload is enabled for the backend via the `--hot` flag (`bun run --hot src/index.ts`). Changes to backend source files are applied instantly without restarting the process.
+    </Tip>
   </Step>
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+## Running Services
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
-</Tip>
+Once `bun run dev` is running, the following services are available:
+
+| Service | URL |
+|---|---|
+| Backend API | http://localhost:3000 |
+| API Docs (Swagger UI) | http://localhost:3000/api/v1/docs |
+| Storefront | http://localhost:4321 |
+| Admin Dashboard | http://localhost:5174 |
+
+## Running Individual Apps
+
+To start only one app at a time, use the targeted dev commands from the monorepo root:
+
+```bash
+# Backend only
+bun run dev:backend
+
+# Astro storefront only
+bun run dev:storefront
+
+# React admin dashboard only
+bun run dev:admin
+```
+
+## Database Commands
+
+All database operations are available as root-level scripts that delegate to the `@avanzar/db` package:
+
+| Command | Description |
+|---|---|
+| `bun run db:generate` | Generate a new Drizzle migration from schema changes |
+| `bun run db:migrate` | Apply pending migrations to the database |
+| `bun run db:push` | Push schema changes directly without a migration file |
+| `bun run db:studio` | Open Drizzle Studio in the browser for visual DB inspection |
+| `bun run db:up` | Start the PostgreSQL Docker container (`docker compose up -d`) |
+| `bun run db:down` | Stop and remove the PostgreSQL Docker container |

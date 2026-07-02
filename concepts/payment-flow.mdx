@@ -1,0 +1,104 @@
+---
+title: "Manual Payment Confirmation Workflow"
+sidebarTitle: "Payment Flow"
+description: "Payments in Avanzar are confirmed manually by admin staff. Learn how the pending-to-confirmed flow works, what triggers order promotion, and how to handle double-confirmation safely."
+---
+
+Avanzar In Time Shop is designed for markets where automated payment gateway integration is impractical. Instead of processing cards programmatically, the platform captures a payment intent at checkout and then relies on admin staff to verify the incoming transfer or cash receipt before releasing the order for fulfillment. This manual model keeps the integration surface small and supports real-world informal payment channels common in the Cuban market.
+
+## Payment Methods
+
+Three payment methods are supported, defined in the `payment_method` enum:
+
+<CardGroup cols={3}>
+  <Card title="cod" icon="money-bill-wave">
+    **Cash on Delivery.** The customer pays the courier in cash upon receiving the package. No upfront payment reference is expected.
+  </Card>
+  <Card title="transfer_local" icon="building-columns">
+    **Local bank transfer.** The buyer transfers funds through a domestic Cuban bank channel and provides the transaction reference to the admin.
+  </Card>
+  <Card title="zelle" icon="dollar-sign">
+    **Zelle wire transfer.** Common for overseas buyers (e.g., from the US) who send USD to a Zelle-registered account before the order is dispatched.
+  </Card>
+</CardGroup>
+
+## Payment Statuses
+
+Each payment record moves through the `payment_status` enum:
+
+| Status | Meaning |
+|---|---|
+| `pending` | Created automatically at checkout. Awaiting admin review and confirmation. |
+| `confirmed` | Admin has verified the payment receipt. The linked order is promoted to `paid`. |
+| `rejected` | Payment was rejected. Defined in the schema for future use — not wired to V1 transition logic yet. |
+
+## Confirmation Flow
+
+<Steps>
+  <Step title="Customer places order">
+    The checkout endpoint creates an `orders` record (status: `pending_payment`) and a `payments` record (status: `pending`) atomically in the same database transaction. The `amountMinor` on the payment equals the `totalMinor` of the order.
+  </Step>
+  <Step title="Customer sends payment">
+    For Zelle or local transfer, the customer completes the payment outside the platform and obtains a confirmation number or reference code from their bank or Zelle app.
+  </Step>
+  <Step title="Customer submits reference">
+    The customer shares the reference number with the shop (e.g., via WhatsApp or the order notes field). The admin will use this reference to reconcile the incoming funds.
+  </Step>
+  <Step title="Admin confirms via API">
+    An authenticated admin calls `PATCH /api/v1/admin/payments/:id/confirm` with the reference string in the request body:
+
+    ```json
+    {
+      "reference": "ZEL-20240601-ABC123"
+    }
+    ```
+  </Step>
+  <Step title="Payment record updated">
+    The backend performs a conditional `UPDATE payments SET status = 'confirmed', confirmed_by = :adminId, confirmed_at = NOW(), reference = :reference WHERE id = :id AND status = 'pending'`. The `confirmedBy` and `confirmedAt` fields are populated, creating a permanent record of who authorized the payment.
+  </Step>
+  <Step title="Order promoted automatically">
+    Immediately after confirming the payment, a conditional `UPDATE orders SET status = 'paid' WHERE id = :orderId AND status = 'pending_payment'` is executed. A corresponding entry is appended to `order_status_history` with `changedBy` set to the admin's user ID.
+  </Step>
+</Steps>
+
+## Double-Confirmation Safety
+
+The `WHERE status = 'pending'` clause on the payment `UPDATE` is the key guard against double-confirmation. If two admin users open the same payment record and click "Confirm" within milliseconds of each other, only the first request will match the `WHERE` predicate and succeed. The second request finds **0 rows** affected and receives a `409 Conflict` response.
+
+```typescript
+// Conditional UPDATE — only succeeds when status is still 'pending'
+const result = await db
+  .update(payments)
+  .set({
+    status:      "confirmed",
+    reference:   input.reference,
+    confirmedBy: adminUserId,
+    confirmedAt: new Date(),
+    updatedAt:   new Date(),
+  })
+  .where(and(eq(payments.id, paymentId), eq(payments.status, "pending")))
+  .returning();
+
+if (result.length === 0) {
+  // Payment was already confirmed (or rejected) by another request
+  throw new ConflictError("PAYMENT_ALREADY_PROCESSED");
+}
+```
+
+The same pattern protects the subsequent order status promotion, ensuring the order cannot accidentally be double-promoted.
+
+<Warning>
+  Once a payment reaches `confirmed`, it **cannot** be re-confirmed. Any further `PATCH /admin/payments/:id/confirm` request against an already-confirmed payment returns `409 Conflict` with the code `PAYMENT_ALREADY_PROCESSED`. If a reference number needs to be corrected, contact your database administrator to make a manual adjustment.
+</Warning>
+
+## The `reference` Field
+
+The `reference` column on the `payments` table stores the external confirmation identifier provided by the customer — for example a Zelle transaction ID or a local bank transfer folio number. It is optional at order creation (some methods like `cod` have no upfront reference) and is set by the admin during confirmation.
+
+| Payment method | Typical reference format |
+|---|---|
+| `zelle` | `ZEL-YYYYMMDD-XXXXXX` (Zelle confirmation number) |
+| `transfer_local` | Bank-issued folio or transaction ID |
+| `cod` | Left blank — cash is collected on delivery |
+
+This field is stored permanently on the payment record and surfaces in the admin payment detail view for reconciliation and dispute resolution.

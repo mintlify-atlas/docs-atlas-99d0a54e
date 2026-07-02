@@ -1,0 +1,270 @@
+---
+title: "Customer Orders API — View Your Order History"
+sidebarTitle: "Orders"
+description: "GET /api/v1/orders and GET /api/v1/orders/:id — authenticated endpoints to view the current user's order history with items and payments."
+---
+
+These endpoints return orders scoped strictly to the authenticated user. Authentication via a valid session cookie is required for both routes — unauthenticated requests are rejected with `401`. Orders created as guest checkouts (with `userId: null`) are not accessible through this API; only orders linked to an authenticated account are returned.
+
+---
+
+## List orders
+
+Returns all orders belonging to the authenticated user, sorted by `createdAt` descending (most recent first). Each order includes its line items and payment records.
+
+```bash
+curl https://api.avanzarintimeshop.com/api/v1/orders \
+  -H "Cookie: better-auth.session_token=<your-session-token>"
+```
+
+**Requires:** valid session cookie (`requireSession` middleware).
+
+### Response
+
+<ResponseField name="orders" type="Order[]" required>
+  All orders belonging to the authenticated user, ordered newest-first.
+
+  <Expandable title="Order object">
+    <ResponseField name="id" type="string (UUID)">
+      Unique order identifier.
+    </ResponseField>
+    <ResponseField name="orderNumber" type="string">
+      Human-readable order reference (e.g., `"ORD-20241115-A3F2"`). Unique across all orders.
+    </ResponseField>
+    <ResponseField name="userId" type="string">
+      The authenticated user's ID. Always present on orders returned by this endpoint.
+    </ResponseField>
+    <ResponseField name="status" type="string (enum)">
+      Current order status. One of: `pending_payment`, `paid`, `preparing`, `shipped`, `delivered`, `cancelled`.
+    </ResponseField>
+    <ResponseField name="currency" type="string">
+      ISO 4217 currency code for all monetary values in this order.
+    </ResponseField>
+    <ResponseField name="buyerName" type="string">
+      Snapshot of the buyer's name at time of order.
+    </ResponseField>
+    <ResponseField name="buyerEmail" type="string">
+      Snapshot of the buyer's email at time of order.
+    </ResponseField>
+    <ResponseField name="buyerPhone" type="string">
+      Snapshot of the buyer's phone number at time of order.
+    </ResponseField>
+    <ResponseField name="shipRecipient" type="string">
+      Snapshot of the recipient's name at time of order.
+    </ResponseField>
+    <ResponseField name="shipProvince" type="string">
+      Destination province, snapshotted at time of order.
+    </ResponseField>
+    <ResponseField name="shipMunicipality" type="string">
+      Destination municipality, snapshotted at time of order.
+    </ResponseField>
+    <ResponseField name="shipAddressLine" type="string">
+      Full delivery address, snapshotted at time of order.
+    </ResponseField>
+    <ResponseField name="subtotalMinor" type="integer">
+      Sum of all line totals in cents.
+    </ResponseField>
+    <ResponseField name="shippingMinor" type="integer">
+      Shipping cost in cents.
+    </ResponseField>
+    <ResponseField name="discountMinor" type="integer">
+      Discount amount in cents. `0` if no discount was applied.
+    </ResponseField>
+    <ResponseField name="totalMinor" type="integer">
+      Final order total in cents (`subtotalMinor + shippingMinor - discountMinor`).
+    </ResponseField>
+    <ResponseField name="createdAt" type="string (ISO 8601)">
+      Timestamp when the order was placed.
+    </ResponseField>
+    <ResponseField name="items" type="OrderItem[]">
+      Line items snapshot. Each entry contains `{ id, orderId, productId, productName, unitAmountMinor, quantity, lineTotalMinor }`. `productId` may be `null` if the product was later deleted.
+    </ResponseField>
+    <ResponseField name="payments" type="Payment[]">
+      Payment records for this order. Typically one entry. Each contains `{ id, orderId, method, status, amountMinor, currency, reference, confirmedAt }`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+**Example response — `200 OK`**
+
+```json
+{
+  "orders": [
+    {
+      "id": "ord-0001-0000-0000-0000-000000000001",
+      "orderNumber": "ORD-20241115-A3F2",
+      "userId": "user-abc123",
+      "status": "paid",
+      "currency": "USD",
+      "buyerName": "Carlos Pérez",
+      "buyerEmail": "carlos@example.com",
+      "buyerPhone": "+1-305-555-0100",
+      "shipRecipient": "María García",
+      "shipPhone": "+53-52345678",
+      "shipProvince": "La Habana",
+      "shipMunicipality": "Plaza de la Revolución",
+      "shipAddressLine": "Calle 23 #456 entre J e I, Vedado",
+      "shipReference": "Edificio azul, apartamento 3B",
+      "subtotalMinor": 4999,
+      "shippingMinor": 500,
+      "discountMinor": 0,
+      "totalMinor": 5499,
+      "createdAt": "2024-11-15T14:22:10.000Z",
+      "updatedAt": "2024-11-15T16:05:00.000Z",
+      "items": [
+        {
+          "id": "item-0001-0000-0000-0000-000000000001",
+          "orderId": "ord-0001-0000-0000-0000-000000000001",
+          "productId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+          "productName": "Classic White Watch",
+          "unitAmountMinor": 4999,
+          "quantity": 1,
+          "lineTotalMinor": 4999
+        }
+      ],
+      "payments": [
+        {
+          "id": "pay-0001-0000-0000-0000-000000000001",
+          "orderId": "ord-0001-0000-0000-0000-000000000001",
+          "method": "zelle",
+          "status": "confirmed",
+          "amountMinor": 5499,
+          "currency": "USD",
+          "reference": "ZELLE-REF-88271",
+          "confirmedAt": "2024-11-15T16:05:00.000Z"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Error response — `401 Unauthorized`**
+
+```json
+{
+  "error": "Unauthorized"
+}
+```
+
+---
+
+## Get a single order
+
+Returns one order by its UUID, but only if it belongs to the authenticated user. If the order exists but belongs to a different user, it returns `404` — not `403` — to avoid leaking existence information.
+
+The single-order response also includes `statusHistory`: a chronological audit trail of every status transition the order has undergone.
+
+```bash
+curl https://api.avanzarintimeshop.com/api/v1/orders/ord-0001-0000-0000-0000-000000000001 \
+  -H "Cookie: better-auth.session_token=<your-session-token>"
+```
+
+**Requires:** valid session cookie (`requireSession` middleware).
+
+### Path parameters
+
+<ParamField path="id" type="string (UUID)" required>
+  The unique identifier of the order to retrieve. Only orders belonging to the authenticated user are returned — all others yield `404`.
+</ParamField>
+
+### Response
+
+<ResponseField name="order" type="Order" required>
+  The matching order with items, payments, and full status history.
+
+  <Expandable title="Additional field on single-order response">
+    <ResponseField name="statusHistory" type="OrderStatusHistory[]">
+      Chronological audit trail of status changes, ordered by `createdAt` ascending. Each entry contains `{ id, orderId, status, changedBy, createdAt }`. `changedBy` is the admin user ID who made the change, or `null` for system-generated entries (e.g., initial `pending_payment` created at checkout).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+**Example response — `200 OK`**
+
+```json
+{
+  "order": {
+    "id": "ord-0001-0000-0000-0000-000000000001",
+    "orderNumber": "ORD-20241115-A3F2",
+    "userId": "user-abc123",
+    "status": "shipped",
+    "currency": "USD",
+    "buyerName": "Carlos Pérez",
+    "buyerEmail": "carlos@example.com",
+    "buyerPhone": "+1-305-555-0100",
+    "shipRecipient": "María García",
+    "shipPhone": "+53-52345678",
+    "shipProvince": "La Habana",
+    "shipMunicipality": "Plaza de la Revolución",
+    "shipAddressLine": "Calle 23 #456 entre J e I, Vedado",
+    "shipReference": "Edificio azul, apartamento 3B",
+    "subtotalMinor": 4999,
+    "shippingMinor": 500,
+    "discountMinor": 0,
+    "totalMinor": 5499,
+    "createdAt": "2024-11-15T14:22:10.000Z",
+    "updatedAt": "2024-11-17T09:00:00.000Z",
+    "items": [
+      {
+        "id": "item-0001-0000-0000-0000-000000000001",
+        "orderId": "ord-0001-0000-0000-0000-000000000001",
+        "productId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "productName": "Classic White Watch",
+        "unitAmountMinor": 4999,
+        "quantity": 1,
+        "lineTotalMinor": 4999
+      }
+    ],
+    "payments": [
+      {
+        "id": "pay-0001-0000-0000-0000-000000000001",
+        "orderId": "ord-0001-0000-0000-0000-000000000001",
+        "method": "zelle",
+        "status": "confirmed",
+        "amountMinor": 5499,
+        "currency": "USD",
+        "reference": "ZELLE-REF-88271",
+        "confirmedAt": "2024-11-15T16:05:00.000Z"
+      }
+    ],
+    "statusHistory": [
+      {
+        "id": "hist-0001-0000-0000-0000-000000000001",
+        "orderId": "ord-0001-0000-0000-0000-000000000001",
+        "status": "pending_payment",
+        "changedBy": null,
+        "createdAt": "2024-11-15T14:22:10.000Z"
+      },
+      {
+        "id": "hist-0001-0000-0000-0000-000000000002",
+        "orderId": "ord-0001-0000-0000-0000-000000000001",
+        "status": "paid",
+        "changedBy": "admin-user-id-001",
+        "createdAt": "2024-11-15T16:05:00.000Z"
+      },
+      {
+        "id": "hist-0001-0000-0000-0000-000000000003",
+        "orderId": "ord-0001-0000-0000-0000-000000000001",
+        "status": "shipped",
+        "changedBy": "admin-user-id-001",
+        "createdAt": "2024-11-17T09:00:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+**Error responses**
+
+```json
+{ "error": "Unauthorized" }
+```
+```json
+{ "error": "Pedido no encontrado" }
+```
+
+| HTTP | Condition |
+|------|-----------|
+| `401` | No valid session cookie present. |
+| `404` | Order does not exist, or belongs to a different user. |

@@ -1,0 +1,220 @@
+---
+title: "Admin Orders API — Order Management and Status Updates"
+sidebarTitle: "Orders"
+description: "Admin endpoints for listing and managing orders. The PATCH status endpoint enforces the state machine, audit history, and automatically restores stock on cancellation."
+---
+
+The admin orders API provides full visibility into every order placed across all customer accounts. Admins and staff can list, inspect, and advance orders through their lifecycle using the status update endpoint. Status transitions are enforced server-side via a strict state machine — invalid transitions are rejected with a descriptive 422 response. All status changes are recorded in an append-only `statusHistory` table for audit purposes, and cancellations automatically restore stock for affected products.
+
+<Note>
+  All endpoints in this section require the `admin` or `staff` role. Requests without a valid session return **401**; requests with insufficient role return **403**.
+</Note>
+
+---
+
+## Endpoints
+
+### List Orders
+
+<br />
+
+```
+GET /api/v1/admin/orders
+```
+
+Returns all orders across all customers, ordered by `createdAt` descending (newest first). Supports an optional `status` filter. Each order in the response includes its nested `items` and `payments` arrays.
+
+**Query Parameters**
+
+<ParamField query="status" type="string">
+  Filter by order status. One of: `pending_payment`, `paid`, `preparing`, `shipped`, `delivered`, `cancelled`. Omit to return all statuses.
+</ParamField>
+
+**Response `200`**
+
+```json
+{
+  "orders": [
+    {
+      "id": "ord-aabb1122-3344-5566-7788-99aabbccddee",
+      "userId": "usr-11223344-aabb-ccdd-eeff-001122334455",
+      "status": "paid",
+      "province": "Miranda",
+      "shippingAmountMinor": 500,
+      "currency": "USD",
+      "createdAt": "2024-06-01T14:00:00.000Z",
+      "updatedAt": "2024-06-01T15:30:00.000Z",
+      "items": [
+        {
+          "id": "item-uuid",
+          "orderId": "ord-aabb1122-...",
+          "productId": "01924f3e-1a2b-7c8d-9e0f-a1b2c3d4e5f6",
+          "productName": "Reloj Automático Seiko",
+          "quantity": 1,
+          "unitAmountMinor": 18500,
+          "currency": "USD"
+        }
+      ],
+      "payments": [
+        {
+          "id": "pay-uuid",
+          "orderId": "ord-aabb1122-...",
+          "method": "zelle",
+          "status": "confirmed",
+          "amountMinor": 19000,
+          "currency": "USD"
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+### Get Order by ID
+
+<br />
+
+```
+GET /api/v1/admin/orders/:id
+```
+
+Fetches a single order with full relations: `items`, `payments`, and `statusHistory`. The `statusHistory` array is ordered by `createdAt` ascending, giving a chronological audit trail of every status transition and which admin triggered it.
+
+**Response `200`**
+
+```json
+{
+  "order": {
+    "id": "ord-aabb1122-3344-5566-7788-99aabbccddee",
+    "userId": "usr-11223344-aabb-ccdd-eeff-001122334455",
+    "status": "preparing",
+    "province": "Miranda",
+    "shippingAmountMinor": 500,
+    "currency": "USD",
+    "createdAt": "2024-06-01T14:00:00.000Z",
+    "updatedAt": "2024-06-01T16:00:00.000Z",
+    "items": [ { "..." : "..." } ],
+    "payments": [ { "..." : "..." } ],
+    "statusHistory": [
+      {
+        "id": "hist-uuid-1",
+        "orderId": "ord-aabb1122-...",
+        "status": "pending_payment",
+        "changedBy": null,
+        "createdAt": "2024-06-01T14:00:00.000Z"
+      },
+      {
+        "id": "hist-uuid-2",
+        "orderId": "ord-aabb1122-...",
+        "status": "paid",
+        "changedBy": "usr-admin-uuid",
+        "createdAt": "2024-06-01T15:30:00.000Z"
+      },
+      {
+        "id": "hist-uuid-3",
+        "orderId": "ord-aabb1122-...",
+        "status": "preparing",
+        "changedBy": "usr-admin-uuid",
+        "createdAt": "2024-06-01T16:00:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+**Error responses:** `404` if the order ID does not exist.
+
+---
+
+### Update Order Status
+
+<br />
+
+```
+PATCH /api/v1/admin/orders/:id/status
+```
+
+Advances (or cancels) an order to a new status. The transition must be valid according to the server-side state machine. A history entry is automatically inserted recording the new status and the ID of the admin who made the change. On cancellation, stock is restored for all items with a linked product.
+
+**Request Body**
+
+<ParamField body="status" type="string" required>
+  Target order status. Must be a valid next state for the current order status. One of: `pending_payment`, `paid`, `preparing`, `shipped`, `delivered`, `cancelled`.
+</ParamField>
+
+**Valid State Machine Transitions**
+
+The following transitions are permitted. Any other combination returns **422 INVALID_TRANSITION**.
+
+| From              | Allowed `to` values              |
+|-------------------|----------------------------------|
+| `pending_payment` | `paid`                           |
+| `paid`            | `preparing`, `cancelled`         |
+| `preparing`       | `shipped`, `cancelled`           |
+| `shipped`         | `delivered`, `cancelled`         |
+
+<Info>
+  `delivered` and `cancelled` are terminal states — no further transitions are permitted from them.
+</Info>
+
+**Example Request**
+
+```bash
+curl -X PATCH https://api.avanzarintimeshop.com/api/v1/admin/orders/ord-aabb1122-3344-5566-7788-99aabbccddee/status \
+  -H "Content-Type: application/json" \
+  -H "Cookie: session=<your-session-cookie>" \
+  -d '{ "status": "preparing" }'
+```
+
+**Response `200`** — returns the full updated order with `items`, `payments`, and `statusHistory`.
+
+```json
+{
+  "order": {
+    "id": "ord-aabb1122-3344-5566-7788-99aabbccddee",
+    "status": "preparing",
+    "updatedAt": "2024-06-01T16:00:00.000Z",
+    "items": [ { "..." : "..." } ],
+    "payments": [ { "..." : "..." } ],
+    "statusHistory": [ { "..." : "..." } ]
+  }
+}
+```
+
+**Error Responses**
+
+<Expandable title="404 — Order Not Found">
+  ```json
+  { "error": "Pedido no encontrado" }
+  ```
+  No order with the given ID exists.
+</Expandable>
+
+<Expandable title="409 — Already In That Status or Concurrent Modification">
+  ```json
+  { "error": "El pedido ya está en ese estado" }
+  ```
+  Returned when the target status equals the current status, **or** when a concurrent update was detected (optimistic lock failure — see warning below).
+</Expandable>
+
+<Expandable title="422 — Invalid Transition">
+  ```json
+  {
+    "error": "INVALID_TRANSITION",
+    "code": "INVALID_TRANSITION",
+    "from": "shipped",
+    "to": "pending_payment"
+  }
+  ```
+  The requested transition is not permitted by the state machine. The `from` and `to` fields indicate what was attempted.
+</Expandable>
+
+<Note>
+  **Stock restoration on cancellation:** When an order is moved to `cancelled`, the server iterates all order items and increments `stockQuantity` on each linked product. This only applies to items where `productId` is not null — if a product was archived and its ID was set to null (via a set-null foreign key), that item's quantity is silently skipped since the product no longer exists.
+</Note>
+
+<Warning>
+  **Optimistic concurrency:** The status update uses a conditional `UPDATE … WHERE status = :expectedStatus`. If two admins attempt to update the same order simultaneously, the second request will find the row already changed and return **409** — `"El pedido cambió de estado, reintentá"`. Refresh the order and retry with the updated current status.
+</Warning>

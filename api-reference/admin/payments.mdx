@@ -1,0 +1,225 @@
+---
+title: "Admin Payments API — Manual Payment Confirmation"
+sidebarTitle: "Payments"
+description: "Admin endpoints for listing payments and confirming manual transfers. Confirming a payment atomically promotes the linked order from pending_payment to paid."
+---
+
+Admin payment management is central to the manual confirmation workflow used by Avanzar In Time Shop. Because the store accepts manual payment methods — Zelle transfers, local bank transfers, and cash on delivery — staff must verify that a payment was received and confirm it with a reference number before the order moves to fulfillment. The confirm endpoint handles both the payment update and the order status promotion atomically, preventing duplicate confirmations even under concurrent admin activity.
+
+<Note>
+  All endpoints in this section require the `admin` or `staff` role. Requests without a valid session return **401**; requests with insufficient role return **403**.
+</Note>
+
+---
+
+## Endpoints
+
+### List Payments
+
+<br />
+
+```
+GET /api/v1/admin/payments
+```
+
+Returns all payments across all orders, ordered by `createdAt` descending. Supports an optional `status` filter to focus on pending items awaiting confirmation.
+
+**Query Parameters**
+
+<ParamField query="status" type="string">
+  Filter by payment status. One of: `pending`, `confirmed`, `rejected`. Omit to return all statuses.
+</ParamField>
+
+**Response `200`**
+
+```json
+{
+  "payments": [
+    {
+      "id": "pay-aabb1122-3344-5566-7788-99aabbccddee",
+      "orderId": "ord-aabb1122-3344-5566-7788-99aabbccddee",
+      "method": "zelle",
+      "status": "pending",
+      "amountMinor": 19000,
+      "currency": "USD",
+      "reference": null,
+      "confirmedBy": null,
+      "confirmedAt": null,
+      "createdAt": "2024-06-01T14:05:00.000Z",
+      "updatedAt": "2024-06-01T14:05:00.000Z"
+    },
+    {
+      "id": "pay-bbcc2233-4455-6677-8899-aabbccddeeff",
+      "orderId": "ord-bbcc2233-4455-6677-8899-aabbccddeeff",
+      "method": "transfer_local",
+      "status": "confirmed",
+      "amountMinor": 42000,
+      "currency": "VES",
+      "reference": "TRF-20240530-XYZ789",
+      "confirmedBy": "usr-admin-uuid",
+      "confirmedAt": "2024-05-30T11:20:00.000Z",
+      "createdAt": "2024-05-30T10:00:00.000Z",
+      "updatedAt": "2024-05-30T11:20:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+### Get Payment by ID
+
+<br />
+
+```
+GET /api/v1/admin/payments/:id
+```
+
+Returns a single payment including the linked `order` relation, giving full context without a separate order request.
+
+**Response `200`**
+
+```json
+{
+  "payment": {
+    "id": "pay-aabb1122-3344-5566-7788-99aabbccddee",
+    "orderId": "ord-aabb1122-3344-5566-7788-99aabbccddee",
+    "method": "zelle",
+    "status": "pending",
+    "amountMinor": 19000,
+    "currency": "USD",
+    "reference": null,
+    "confirmedBy": null,
+    "confirmedAt": null,
+    "createdAt": "2024-06-01T14:05:00.000Z",
+    "updatedAt": "2024-06-01T14:05:00.000Z",
+    "order": {
+      "id": "ord-aabb1122-3344-5566-7788-99aabbccddee",
+      "userId": "usr-11223344-aabb-ccdd-eeff-001122334455",
+      "status": "pending_payment",
+      "province": "Caracas",
+      "shippingAmountMinor": 500,
+      "currency": "USD",
+      "createdAt": "2024-06-01T14:00:00.000Z",
+      "updatedAt": "2024-06-01T14:00:00.000Z"
+    }
+  }
+}
+```
+
+**Error responses:** `404` if the payment ID does not exist.
+
+---
+
+### Confirm Payment
+
+<br />
+
+```
+PATCH /api/v1/admin/payments/:id/confirm
+```
+
+Confirms a pending payment. This endpoint performs an atomic transaction that:
+
+1. Updates the payment `status` to `confirmed`, records the `confirmedBy` admin ID, `confirmedAt` timestamp, and the provided `reference`.
+2. Promotes the linked order from `pending_payment` → `paid` (conditional on the order still being in `pending_payment` status).
+3. Appends a `paid` entry to the order's `statusHistory`.
+
+**Request Body**
+
+<ParamField body="reference" type="string" required>
+  The transfer reference or confirmation number provided by the customer (e.g. Zelle confirmation code, bank transaction ID). Minimum length: 1 character.
+</ParamField>
+
+**Example Request**
+
+```bash
+curl -X PATCH https://api.avanzarintimeshop.com/api/v1/admin/payments/pay-aabb1122-3344-5566-7788-99aabbccddee/confirm \
+  -H "Content-Type: application/json" \
+  -H "Cookie: session=<your-session-cookie>" \
+  -d '{ "reference": "ZEL-20240601-ABC123" }'
+```
+
+**Response `200`**
+
+The confirmed payment object is returned. All confirmation fields are now populated.
+
+```json
+{
+  "payment": {
+    "id": "pay-aabb1122-3344-5566-7788-99aabbccddee",
+    "orderId": "ord-aabb1122-3344-5566-7788-99aabbccddee",
+    "method": "zelle",
+    "status": "confirmed",
+    "amountMinor": 19000,
+    "currency": "USD",
+    "reference": "ZEL-20240601-ABC123",
+    "confirmedBy": "usr-admin-uuid",
+    "confirmedAt": "2024-06-01T15:45:00.000Z",
+    "createdAt": "2024-06-01T14:05:00.000Z",
+    "updatedAt": "2024-06-01T15:45:00.000Z"
+  }
+}
+```
+
+**Error Responses**
+
+<Expandable title="404 — Payment Not Found">
+  ```json
+  { "error": "Pago no encontrado" }
+  ```
+  No payment with the given ID exists.
+</Expandable>
+
+<Expandable title="409 — Payment Not Pending">
+  ```json
+  { "error": "El pago no está pendiente" }
+  ```
+  The payment has already been confirmed (or is in `rejected` status). Only `pending` payments can be confirmed.
+</Expandable>
+
+---
+
+## Payment Response Fields
+
+<ResponseField name="id" type="string">
+  UUID of the payment record.
+</ResponseField>
+
+<ResponseField name="orderId" type="string">
+  UUID of the order this payment is associated with.
+</ResponseField>
+
+<ResponseField name="method" type="string">
+  Payment method used by the customer. One of: `cod` (cash on delivery), `transfer_local` (local bank transfer), `zelle`.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Current payment status. One of: `pending`, `confirmed`, `rejected`.
+</ResponseField>
+
+<ResponseField name="amountMinor" type="integer">
+  Payment amount in minor currency units (e.g. `19000` = $190.00 USD).
+</ResponseField>
+
+<ResponseField name="currency" type="string">
+  ISO 4217 currency code for the payment amount (e.g. `"USD"`, `"VES"`).
+</ResponseField>
+
+<ResponseField name="reference" type="string | null">
+  Transfer reference number provided by the confirming admin. `null` until confirmed.
+</ResponseField>
+
+<ResponseField name="confirmedBy" type="string | null">
+  UUID of the admin user who confirmed the payment. `null` until confirmed.
+</ResponseField>
+
+<ResponseField name="confirmedAt" type="string | null">
+  ISO 8601 timestamp of when the payment was confirmed. `null` until confirmed.
+</ResponseField>
+
+---
+
+<Note>
+  **Atomic double-confirmation prevention:** The confirm endpoint uses a conditional `UPDATE … WHERE status = 'pending'`. If two staff members attempt to confirm the same payment simultaneously, only one will match the `WHERE` clause and succeed. The other will receive a **409** response — `"El pago no está pendiente"` — without corrupting any data. No idempotency key or locking mechanism is required from the client.
+</Note>

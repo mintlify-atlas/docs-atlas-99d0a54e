@@ -1,0 +1,107 @@
+---
+title: "API Authentication with Better Auth Sessions"
+sidebarTitle: "Authentication"
+description: "Avanzar uses Better Auth for session-based authentication via HTTP cookies. Sign in to get a session cookie, then include it automatically in subsequent requests."
+---
+
+Avanzar delegates all authentication to [Better Auth](https://better-auth.com), which exposes its own handler at `/api/auth/*`. Authentication is **cookie-based**, not token-based — there are no `Authorization: Bearer` headers. When a user signs in, Better Auth sets an HTTP session cookie that the browser (or HTTP client) attaches automatically to every subsequent request. Because the API enables `credentials: true` in its CORS configuration, clients must also send credentials with cross-origin requests.
+
+## Sign Up
+
+Create a new account by sending the user's name, email, and password to the Better Auth email-and-password endpoint:
+
+```
+POST /api/auth/sign-up/email
+```
+
+**Request body:**
+
+```json
+{
+  "name": "John Doe",
+  "email": "john@example.com",
+  "password": "securepassword123"
+}
+```
+
+The `role` field is **not accepted** from the client at sign-up. Better Auth is configured with `input: false` on the role field, so it is always set to `customer` server-side regardless of what the request body contains. Roles can only be changed by staff or admin users after account creation.
+
+## Sign In
+
+Exchange credentials for a session cookie:
+
+```
+POST /api/auth/sign-in/email
+```
+
+**Request body:**
+
+```json
+{
+  "email": "john@example.com",
+  "password": "securepassword123"
+}
+```
+
+A successful response sets a `better-auth.session_token` cookie in the browser. All subsequent requests from the same browser session are authenticated automatically — no extra headers are required.
+
+## Sign Out
+
+Invalidate the current session and clear the session cookie:
+
+```
+POST /api/auth/sign-out
+```
+
+No request body is needed. After this call the previous session token is no longer valid.
+
+## Making Authenticated Requests
+
+Browsers handle the session cookie transparently once it is set. For server-to-server calls, automated scripts, or CLI testing, pass the cookie explicitly using the `Cookie` header:
+
+```bash
+curl http://localhost:3000/api/v1/orders \
+  -H "Cookie: better-auth.session_token=<your-token>"
+```
+
+Replace `<your-token>` with the value of the `better-auth.session_token` cookie captured from a sign-in response.
+
+## Admin Access
+
+Routes under `/api/v1/admin/` are protected by `requireAdmin` middleware, which validates that the authenticated user holds the `admin` or `staff` role (as defined in the `user_role` enum: `customer`, `staff`, `admin`).
+
+The first admin account is provisioned by running the seed script:
+
+```bash
+bun run seed:admin
+```
+
+Once at least one admin exists, additional users can be promoted or demoted via the admin API:
+
+```
+PATCH /api/v1/admin/users/:id/role
+```
+
+<Note>
+  Better Auth also provides additional endpoints at `/api/auth/*` for session management, email verification, password reset, and more. Consult the [Better Auth documentation](https://better-auth.com/docs) for the complete list of available endpoints and configuration options.
+</Note>
+
+## Error Responses
+
+Protected routes return one of two error shapes depending on the failure reason:
+
+**No valid session — `401 Unauthorized`:**
+
+```json
+{ "error": "No autenticado" }
+```
+
+**Valid session but insufficient role — `403 Forbidden`:**
+
+```json
+{ "error": "Acceso denegado" }
+```
+
+<Warning>
+  The `credentials: true` CORS setting means the API only accepts credentialed cross-origin requests from explicitly trusted origins. These are configured in `trustedOrigins` inside `apps/backend/src/auth.ts` — currently `http://localhost:4321` (the Astro storefront) and `http://localhost:5174` (the Vite admin panel). Requests from any other origin will be blocked by the browser's CORS policy.
+</Warning>

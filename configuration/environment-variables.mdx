@@ -1,0 +1,80 @@
+---
+title: "Environment Variables Reference for Avanzar"
+sidebarTitle: "Environment Variables"
+description: "Complete reference for all environment variables used by Avanzar In Time Shop, validated at startup with Zod to fail fast on misconfiguration."
+---
+
+All configuration for Avanzar In Time Shop lives in a single `.env` file at the monorepo root. The backend loads it automatically via the `--env-file=../../.env` flag in its `dev` and `start` scripts, so no additional dotenv library is needed. On startup, the backend calls `loadEnv()`, which validates `process.env` against a Zod schema (`envSchema`). If any required variable is absent or malformed, the process prints the specific Zod issues to stderr and exits immediately with a non-zero code — you will never get a silently misconfigured server.
+
+## .env.example
+
+Copy this file to `.env` at the monorepo root and fill in your values before running any service.
+
+```bash
+# PostgreSQL (Docker)
+POSTGRES_USER=avanzar
+POSTGRES_PASSWORD=changeme
+POSTGRES_DB=avanzar
+# Puerto del host (cambia si el 5433 también está ocupado)
+POSTGRES_HOST_PORT=5433
+
+# Cadena de conexión: host -> contenedor (puerto del host)
+DATABASE_URL=postgres://avanzar:changeme@localhost:5433/avanzar
+
+# Backend (Hono)
+PORT=3000
+
+# Better Auth — genera el secret con: bun -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+BETTER_AUTH_SECRET=changeme
+BETTER_AUTH_URL=http://localhost:3000
+```
+
+## Variable Reference
+
+<ParamField path="DATABASE_URL" type="string" required>
+  PostgreSQL connection string used by both the Drizzle ORM client and drizzle-kit. Format: `postgres://user:password@host:port/database`. When using the Docker Compose setup, the host port defaults to `5433`.
+
+  **Example:** `postgres://avanzar:changeme@localhost:5433/avanzar`
+</ParamField>
+
+<ParamField path="BETTER_AUTH_SECRET" type="string" required>
+  A random 32-byte secret used by Better Auth to sign and verify session tokens. Must be at least one character long (validated by `z.string().min(1)`). Generate a strong value with:
+
+  ```bash
+  bun -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+  ```
+</ParamField>
+
+<ParamField path="BETTER_AUTH_URL" type="string" required>
+  Base URL of the backend API. Validated as a proper URL with `z.url()` — bare hostnames or paths will fail validation. Better Auth uses this to construct absolute callback and session URLs.
+
+  **Example:** `http://localhost:3000`
+</ParamField>
+
+<ParamField path="PORT" type="number" default="3000">
+  Port the Hono backend listens on. Coerced to a positive integer by the Zod schema. Override if port `3000` is already in use on your machine.
+</ParamField>
+
+<ParamField path="POSTGRES_USER" type="string" default="avanzar">
+  PostgreSQL username. Passed to the Docker Compose service at container creation time via the `POSTGRES_USER` environment variable.
+</ParamField>
+
+<ParamField path="POSTGRES_PASSWORD" type="string" required>
+  PostgreSQL password. Required in production. The `docker-compose.yml` default falls back to `avanzar` if unset, but you should always set an explicit value outside of local development.
+</ParamField>
+
+<ParamField path="POSTGRES_DB" type="string" default="avanzar">
+  Name of the PostgreSQL database to create inside the container. Must match the database name in your `DATABASE_URL`.
+</ParamField>
+
+<ParamField path="POSTGRES_HOST_PORT" type="number" default="5433">
+  Host-side port mapped to the container's internal port `5432`. Defaults to `5433` to avoid conflicts with a locally installed PostgreSQL instance that may already occupy `5432`.
+</ParamField>
+
+<Warning>
+  `BETTER_AUTH_SECRET` is the signing key for all active user sessions. Never commit it to version control, never share it, and rotate it immediately if it is compromised — rotating the secret invalidates every existing session, requiring all users to sign in again.
+</Warning>
+
+<Note>
+  The `POSTGRES_*` variables (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_HOST_PORT`) are consumed exclusively by Docker Compose when provisioning the container. The application itself only ever reads `DATABASE_URL` for its live database connection. Both sets of values must be consistent: if you change `POSTGRES_PASSWORD`, update `DATABASE_URL` accordingly.
+</Note>

@@ -1,0 +1,433 @@
+---
+title: "Admin Products API — Catalog Management Endpoints"
+sidebarTitle: "Products"
+description: "Admin endpoints for managing the product catalog: CRUD for products, plus nested endpoints for prices, images, and category links. Requires admin or staff role."
+---
+
+The admin products API gives staff full control over the product catalog. All three lifecycle statuses — `draft`, `active`, and `archived` — are visible and manageable here, unlike the public storefront which only serves `active` products. Beyond core CRUD, each product exposes nested sub-endpoints for managing prices (one per currency), images (ordered by position), and category links (the many-to-many join). Hard deletion of products is intentionally unsupported; use the archive endpoint instead.
+
+<Note>
+  All endpoints in this section require the `admin` or `staff` role. Requests without a valid session return **401**; requests with insufficient role return **403**.
+</Note>
+
+---
+
+## Core Product Endpoints
+
+### List Products
+
+<br />
+
+```
+GET /api/v1/admin/products
+```
+
+Returns all products across all statuses, ordered by name. Supports optional filtering by `status` and a case-insensitive text search on the product name via `q`. Each product in the response includes its nested `prices` and `images` arrays.
+
+**Query Parameters**
+
+<ParamField query="status" type="string">
+  Filter by product status. One of `draft`, `active`, or `archived`. Omit to return all statuses.
+</ParamField>
+
+<ParamField query="q" type="string">
+  Case-insensitive substring search on the product `name`. An empty string (`""`) is treated as absent — no error is returned.
+</ParamField>
+
+**Response `200`**
+
+```json
+{
+  "products": [
+    {
+      "id": "01924f3e-1a2b-7c8d-9e0f-a1b2c3d4e5f6",
+      "slug": "reloj-automatico-seiko",
+      "name": "Reloj Automático Seiko",
+      "description": "Movimiento automático NH35, cristal zafiro.",
+      "status": "active",
+      "stockQuantity": 12,
+      "createdAt": "2024-03-01T10:00:00.000Z",
+      "updatedAt": "2024-05-15T08:30:00.000Z",
+      "prices": [
+        {
+          "id": "p1b2c3d4-e5f6-7890-abcd-ef1234567890",
+          "productId": "01924f3e-1a2b-7c8d-9e0f-a1b2c3d4e5f6",
+          "currency": "USD",
+          "amountMinor": 18500
+        }
+      ],
+      "images": [
+        {
+          "id": "img-abc123",
+          "productId": "01924f3e-1a2b-7c8d-9e0f-a1b2c3d4e5f6",
+          "url": "https://cdn.example.com/seiko-front.jpg",
+          "alt": "Vista frontal",
+          "position": 1
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+### Get Product by ID
+
+<br />
+
+```
+GET /api/v1/admin/products/:id
+```
+
+Fetches a single product by its UUID. The response includes nested `prices`, `images` (ordered ascending by `position`), and `categories` (with the full category object on each link row).
+
+**Response `200`**
+
+```json
+{
+  "product": {
+    "id": "01924f3e-1a2b-7c8d-9e0f-a1b2c3d4e5f6",
+    "slug": "reloj-automatico-seiko",
+    "name": "Reloj Automático Seiko",
+    "description": "Movimiento automático NH35, cristal zafiro.",
+    "status": "active",
+    "stockQuantity": 12,
+    "createdAt": "2024-03-01T10:00:00.000Z",
+    "updatedAt": "2024-05-15T08:30:00.000Z",
+    "prices": [
+      { "id": "p1b2c3d4-...", "currency": "USD", "amountMinor": 18500 }
+    ],
+    "images": [
+      { "id": "img-abc123", "url": "https://cdn.example.com/seiko-front.jpg", "alt": "Vista frontal", "position": 1 }
+    ],
+    "categories": [
+      {
+        "productId": "01924f3e-...",
+        "categoryId": "cat-uuid-here",
+        "category": { "id": "cat-uuid-here", "slug": "relojes", "name": "Relojes", "parentId": null }
+      }
+    ]
+  }
+}
+```
+
+**Error responses:** `404` if the product ID does not exist.
+
+---
+
+### Create Product
+
+<br />
+
+```
+POST /api/v1/admin/products
+```
+
+Creates a new product. The `slug` must be unique across all products.
+
+<Warning>
+  If the provided `slug` is already in use by another product, the server returns **409** with error code `PRODUCT_SLUG_TAKEN`. Always validate slug uniqueness before submitting, or handle the 409 in your client.
+
+  ```json
+  { "error": "Ese slug ya está en uso", "code": "PRODUCT_SLUG_TAKEN" }
+  ```
+</Warning>
+
+**Request Body**
+
+<ParamField body="slug" type="string" required>
+  URL-safe identifier for the product (e.g. `reloj-automatico-seiko`). Must be unique. Used in storefront URLs.
+</ParamField>
+
+<ParamField body="name" type="string" required>
+  Human-readable product name displayed in listings and product pages.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Optional long-form product description. Supports plain text.
+</ParamField>
+
+<ParamField body="status" type="string">
+  Initial status. One of `draft`, `active`, or `archived`. Defaults to `draft` if omitted.
+</ParamField>
+
+<ParamField body="stockQuantity" type="integer">
+  Initial stock count. Defaults to `0` if omitted. Decremented on checkout; restored on cancellation.
+</ParamField>
+
+**Example Request**
+
+```bash
+curl -X POST https://api.avanzarintimeshop.com/api/v1/admin/products \
+  -H "Content-Type: application/json" \
+  -H "Cookie: session=<your-session-cookie>" \
+  -d '{
+    "slug": "reloj-automatico-seiko",
+    "name": "Reloj Automático Seiko",
+    "description": "Movimiento automático NH35, cristal zafiro, correa de acero.",
+    "status": "draft",
+    "stockQuantity": 10
+  }'
+```
+
+**Response `201`**
+
+```json
+{
+  "product": {
+    "id": "01924f3e-1a2b-7c8d-9e0f-a1b2c3d4e5f6",
+    "slug": "reloj-automatico-seiko",
+    "name": "Reloj Automático Seiko",
+    "description": "Movimiento automático NH35, cristal zafiro, correa de acero.",
+    "status": "draft",
+    "stockQuantity": 10,
+    "createdAt": "2024-06-01T12:00:00.000Z",
+    "updatedAt": "2024-06-01T12:00:00.000Z"
+  }
+}
+```
+
+---
+
+### Update Product
+
+<br />
+
+```
+PATCH /api/v1/admin/products/:id
+```
+
+Partially updates a product. All body fields are optional — only the fields you send will be updated. The `updatedAt` timestamp is refreshed automatically. Returns **409** with `PRODUCT_SLUG_TAKEN` if the new slug conflicts with another product.
+
+**Request Body** — all fields optional (same shape as create)
+
+<ParamField body="slug" type="string">
+  New URL slug. Must remain unique across all products.
+</ParamField>
+
+<ParamField body="name" type="string">
+  Updated display name.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Updated product description.
+</ParamField>
+
+<ParamField body="status" type="string">
+  One of `draft`, `active`, or `archived`. Prefer the dedicated `/archive` endpoint for archiving.
+</ParamField>
+
+<ParamField body="stockQuantity" type="integer">
+  Override current stock count. Prefer letting the checkout system manage this automatically.
+</ParamField>
+
+**Response `200`** — returns the updated `{ product }` object. **`404`** if product not found.
+
+---
+
+### Archive Product
+
+<br />
+
+```
+POST /api/v1/admin/products/:id/archive
+```
+
+Soft-deletes a product by setting its `status` to `archived`. The product remains in the database and its order history is preserved, but it is no longer returned to storefront customers. This operation is **idempotent** — archiving an already-archived product returns the product without error.
+
+<Note>
+  Archiving is the recommended and only supported way to remove a product from the storefront. Hard deletion is intentionally not available — it would break historical order data that references the product. If you need to permanently suppress a product, archive it and optionally rename it.
+</Note>
+
+**Response `200`**
+
+```json
+{
+  "product": {
+    "id": "01924f3e-1a2b-7c8d-9e0f-a1b2c3d4e5f6",
+    "slug": "reloj-automatico-seiko",
+    "status": "archived",
+    "updatedAt": "2024-06-10T09:00:00.000Z"
+  }
+}
+```
+
+**Error responses:** `404` if the product ID does not exist.
+
+---
+
+## Price Sub-Endpoints
+
+Each product may have at most **one price per currency**. Prices are stored in minor units (e.g. `18500` = $185.00 USD).
+
+### Add Price
+
+<br />
+
+```
+POST /api/v1/admin/products/:id/prices
+```
+
+Adds a price entry for a given currency. Returns **409** with `PRICE_CURRENCY_EXISTS` if a price for that currency already exists on the product.
+
+**Request Body**
+
+<ParamField body="currency" type="string" required>
+  ISO 4217 currency code (e.g. `"USD"`, `"VES"`).
+</ParamField>
+
+<ParamField body="amountMinor" type="integer" required>
+  Price in minor units (cents). For USD, `18500` equals $185.00.
+</ParamField>
+
+**Example Request**
+
+```bash
+curl -X POST https://api.avanzarintimeshop.com/api/v1/admin/products/01924f3e-1a2b-7c8d-9e0f-a1b2c3d4e5f6/prices \
+  -H "Content-Type: application/json" \
+  -H "Cookie: session=<your-session-cookie>" \
+  -d '{
+    "currency": "USD",
+    "amountMinor": 18500
+  }'
+```
+
+**Response `201`**
+
+```json
+{
+  "price": {
+    "id": "p1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "productId": "01924f3e-1a2b-7c8d-9e0f-a1b2c3d4e5f6",
+    "currency": "USD",
+    "amountMinor": 18500
+  }
+}
+```
+
+**Error responses:** `409` — `{ "error": "Ya existe un precio para esa moneda", "code": "PRICE_CURRENCY_EXISTS" }`
+
+---
+
+### Update Price
+
+<br />
+
+```
+PATCH /api/v1/admin/products/:id/prices/:priceId
+```
+
+Partially updates a price entry. Both `currency` and `amountMinor` are patchable. The `:priceId` must belong to the specified product.
+
+**Response `200`** — returns `{ price }`. **`404`** if price not found or doesn't belong to product.
+
+---
+
+### Delete Price
+
+<br />
+
+```
+DELETE /api/v1/admin/products/:id/prices/:priceId
+```
+
+Permanently removes a price entry. Returns **204 No Content** on success, **404** if not found.
+
+---
+
+## Image Sub-Endpoints
+
+Images are displayed in the storefront ordered by their `position` field (ascending). Manage position to control display order.
+
+### Add Image
+
+<br />
+
+```
+POST /api/v1/admin/products/:id/images
+```
+
+Adds an image to the product.
+
+**Request Body**
+
+<ParamField body="url" type="string" required>
+  Fully-qualified URL of the image (e.g. CDN URL).
+</ParamField>
+
+<ParamField body="alt" type="string">
+  Alt text for accessibility and SEO.
+</ParamField>
+
+<ParamField body="position" type="integer">
+  Display sort order. Lower values appear first. Defaults to `0` if omitted.
+</ParamField>
+
+**Response `201`** — returns `{ image }` with all stored fields.
+
+---
+
+### Update Image
+
+<br />
+
+```
+PATCH /api/v1/admin/products/:id/images/:imageId
+```
+
+Partially updates an image entry. Useful for reordering (update `position`) or fixing alt text.
+
+**Response `200`** — returns `{ image }`. **`404`** if image not found or doesn't belong to product.
+
+---
+
+### Delete Image
+
+<br />
+
+```
+DELETE /api/v1/admin/products/:id/images/:imageId
+```
+
+Permanently removes an image from the product. Returns **204 No Content** on success, **404** if not found.
+
+---
+
+## Category Link Sub-Endpoints
+
+Products and categories have a many-to-many relationship via the `product_categories` join table. These endpoints manage the links without affecting the products or categories themselves.
+
+### Link Product to Category
+
+<br />
+
+```
+POST /api/v1/admin/products/:id/categories
+```
+
+Associates a product with an existing category. This operation is **idempotent** — linking a product to a category it already belongs to does nothing (uses `onConflictDoNothing` internally).
+
+**Request Body**
+
+<ParamField body="categoryId" type="string" required>
+  UUID of the category to link. The category must already exist.
+</ParamField>
+
+**Response `201`**
+
+```json
+{ "linked": true }
+```
+
+---
+
+### Unlink Product from Category
+
+<br />
+
+```
+DELETE /api/v1/admin/products/:id/categories/:categoryId
+```
+
+Removes the association between a product and a category. The product and category themselves are not affected — only the link row is deleted. Returns **204 No Content** on success, **404** if the link does not exist.

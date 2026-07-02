@@ -1,0 +1,162 @@
+---
+title: "Backend API Server: Hono on Bun"
+sidebarTitle: "Backend"
+description: "The Avanzar backend is a Hono v4 REST API running on Bun with Better Auth sessions, Drizzle ORM, OpenAPI docs, and structured JSON error responses."
+---
+
+The Avanzar backend is a [Hono v4](https://hono.dev) REST API that runs directly on Bun, using Better Auth for session management, Drizzle ORM for type-safe database access, and Zod for request validation. It serves a fully documented OpenAPI 3.1 specification alongside an interactive Swagger UI, making every endpoint explorable without a separate client. All responses — success or error — follow a consistent JSON shape, keeping integration predictable for both the storefront and the admin dashboard.
+
+## Running the Backend
+
+Start the backend from the monorepo root using the workspace script, or invoke Bun directly from within the `apps/backend` directory.
+
+**Development (hot reload)**
+
+```bash
+# From the monorepo root
+bun run dev:backend
+
+# Or directly from apps/backend
+bun run --hot --env-file=../../.env src/index.ts
+```
+
+<Tip>
+  Passing `--hot` to Bun enables file-watching hot reload. Bun automatically restarts the server whenever a source file changes, so you never need to manually reboot during development.
+</Tip>
+
+**Production**
+
+```bash
+bun run --env-file=../../.env src/index.ts
+```
+
+## Route Structure
+
+All API traffic is mounted under `/api`. The three main route trees are:
+
+| Mount path | Description |
+|---|---|
+| `/api/auth/*` | Better Auth handler — sign-up, sign-in, sign-out, and session management |
+| `/api/v1/` | Public routes available to the storefront and authenticated customers |
+| `/api/v1/admin/` | Admin-only routes protected by the `requireAdmin` middleware |
+
+**Public routes** (`/api/v1/`)
+
+These endpoints serve the storefront and authenticated customer account operations. Some (products, categories, shipping-rates, checkout) are fully open; others (orders, addresses) require a valid session cookie.
+
+- `GET /api/v1/products` — active product listing
+- `GET /api/v1/products/:slug` — single product by slug
+- `GET /api/v1/categories` — category tree
+- `GET /api/v1/shipping-rates` — rate lookup by province and currency
+- `POST /api/v1/checkout` — create a new order (guest-friendly)
+- `GET /api/v1/orders` — authenticated user's order history
+- `GET /api/v1/addresses` — saved addresses for the current user
+
+**Admin routes** (`/api/v1/admin/`)
+
+The `requireAdmin` middleware is applied to the entire sub-tree — no admin route is reachable without a valid admin session.
+
+- `/admin/products` — list all products; create, update, archive
+- `/admin/categories` — manage product categories
+- `/admin/orders` — view all orders; update order status via state machine
+- `/admin/payments` — list pending and confirmed payments; confirm with reference number
+- `/admin/shipping-rates` — manage per-province shipping rates
+- `/admin/users` — view users; update user roles
+
+**Utility routes**
+
+- `GET /api/v1/openapi.json` — machine-readable OpenAPI 3.1 specification
+- `GET /api/v1/docs` — interactive Swagger UI
+- `GET /health` — healthcheck returning `{ "status": "ok" }`
+
+<Note>
+  The OpenAPI spec at `/api/v1/openapi.json` and the Swagger UI at `/api/v1/docs` are publicly accessible — no authentication is required to browse the API documentation.
+</Note>
+
+## CORS
+
+CORS is configured on all `/api/*` routes to support cookie-based sessions across the two local origins:
+
+```typescript
+cors({
+  origin: ["http://localhost:4321", "http://localhost:5174"],
+  allowHeaders: ["Content-Type", "Authorization"],
+  allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+  exposeHeaders: ["Content-Length"],
+  maxAge: 600,
+  credentials: true,
+})
+```
+
+`credentials: true` is required so the browser sends the `better-auth.session_token` cookie with every cross-origin request. The two allowed origins map to the storefront (`4321`) and the admin dashboard (`5174`) respectively.
+
+## Error Handling
+
+Every error response from the API follows the same JSON envelope:
+
+```json
+{ "error": "Human-readable message" }
+```
+
+The global `onError` handler catches any uncaught exception, logs the full stack to the server console (never to the client), and responds with a uniform 500:
+
+```typescript
+app.onError((err, c) => {
+  console.error("Error no controlado:", err);
+  return c.json({ error: "Error interno del servidor" }, 500);
+});
+```
+
+Route handlers produce structured errors using the `fail()` helper, which also accepts an optional `extra` object for additional fields such as `code` or `productId`:
+
+```typescript
+// Signature
+function fail(
+  c: Context,
+  status: ContentfulStatusCode,
+  message: string,
+  extra?: Record<string, unknown>,
+): Response
+
+// Usage examples
+fail(c, 404, "Producto no encontrado")
+fail(c, 422, "Stock insuficiente", { code: "OUT_OF_STOCK", productId: id })
+```
+
+The resulting response shape is `{ error: string, ...extra }`.
+
+## Request Validation
+
+Two thin helpers wrap Zod parsing and short-circuit with a `400` response on failure, keeping route handlers free of boilerplate try/catch blocks.
+
+**`parseJson(c, schema)`** — validates the request body:
+
+```typescript
+const parsed = await parseJson(c, checkoutSchema);
+if (!parsed.ok) return parsed.response; // 400 with { error, issues }
+
+const { data } = parsed; // fully-typed, safe to use
+```
+
+**`parseQuery(c, schema)`** — validates URL query parameters:
+
+```typescript
+const parsed = parseQuery(c, shippingQuerySchema);
+if (!parsed.ok) return parsed.response; // 400 with { error, issues }
+
+const { province, currency } = parsed.data;
+```
+
+Both helpers return a discriminated union `{ ok: true; data: T } | { ok: false; response: Response }`, so TypeScript enforces the guard before allowing access to `data`.
+
+## Running Tests
+
+```bash
+# Unit tests (no database required)
+bun run test
+
+# Integration tests (requires a running test database)
+bun run test:integration
+```
+
+The integration suite runs `db:test:setup` first to provision the test database schema before executing the tests in `test/`.

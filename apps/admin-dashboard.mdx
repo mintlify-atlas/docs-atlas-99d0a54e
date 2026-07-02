@@ -1,0 +1,120 @@
+---
+title: "Admin Dashboard: React SPA for Store Management"
+sidebarTitle: "Admin Dashboard"
+description: "The Avanzar admin dashboard is a React 19 SPA with TanStack Query, Radix UI, and Tailwind v4 for managing products, orders, payments, and users."
+---
+
+The Avanzar admin dashboard is a React 19 single-page application built with Vite. It uses TanStack Query for all server-state management and background refetching, Radix UI primitives for accessible UI components, and Tailwind v4 for utility-first styling. Session management is handled by the Better Auth client, which stores an `httpOnly` session cookie shared with the backend. React Router v8 drives client-side navigation across the protected admin pages.
+
+## Running the Admin
+
+Start the Vite dev server on port `5174` from the monorepo root:
+
+```bash
+bun run dev:admin
+```
+
+<Note>
+  The admin app proxies all `/api/*` requests to the backend running at `http://localhost:3000`. The backend must be running before you open the dashboard. To change the backend URL, update the `apiFetch` base in `apps/admin/src/lib/api.ts`.
+</Note>
+
+## Features
+
+<CardGroup cols={2}>
+  <Card title="Products" icon="box">
+    Create, edit, and archive products. Manage multi-currency prices, attach images, and link products to one or more categories — all from a single editor page.
+  </Card>
+  <Card title="Orders" icon="receipt">
+    View all customer orders with optional filtering by status. Advance orders through the state machine (e.g. pending → confirmed → shipped → delivered) with server-enforced transition validation.
+  </Card>
+  <Card title="Payments" icon="credit-card">
+    List pending and confirmed payments side by side. Confirm a payment by supplying a bank reference number, which atomically promotes the linked order to `paid`.
+  </Card>
+  <Card title="Categories" icon="tag">
+    Create and manage product categories. The category model supports a parent–child hierarchy for building nested navigation trees in the storefront.
+  </Card>
+  <Card title="Shipping Rates" icon="truck">
+    Define per-province shipping rates in multiple currencies. Rates are consumed by the public API and used during checkout to compute delivery costs.
+  </Card>
+  <Card title="Users" icon="users">
+    Browse registered users and update their roles (e.g. promote a user to `admin`). A guard on the backend prevents admins from downgrading their own role.
+  </Card>
+</CardGroup>
+
+## Authentication
+
+The dashboard enforces authentication at the router level. Every route except `/login` is wrapped in the `RequireAdmin` component, which checks the current Better Auth session and redirects unauthenticated visitors to the login page.
+
+```tsx
+// apps/admin/src/routes.tsx (simplified)
+export const router = createBrowserRouter([
+  { path: "/login", element: <LoginPage /> },
+  {
+    path: "/",
+    element: <RequireAdmin />,   // guards the entire tree
+    children: [
+      { element: <Layout />, children: [
+        { path: "orders", element: <OrdersListPage /> },
+        { path: "products", element: <ProductsListPage /> },
+        // ...
+      ]},
+    ],
+  },
+]);
+```
+
+The Better Auth client is initialised with `baseURL: window.location.origin`. In development, the Vite proxy forwards `/api/*` to the backend, keeping the session cookie same-origin so it is sent automatically with every authenticated request.
+
+A global 401 handler in `createQueryClient` clears the in-memory cache and hard-navigates to `/login` whenever the backend rejects a request as unauthenticated:
+
+```typescript
+const queryClient = createQueryClient(() => {
+  queryClient.clear();
+  window.location.href = "/login";
+});
+```
+
+## API Communication
+
+All HTTP calls go through the `apiFetch` wrapper in `apps/admin/src/lib/api.ts`. It uses the browser's native `fetch` with `credentials: "include"` so the session cookie is attached to every request, and parses non-2xx responses into typed `ApiError` instances:
+
+```typescript
+// Successful call — returns typed data
+const products = await apiFetch<Product[]>("/api/v1/admin/products");
+
+// Failed call — throws ApiError with .status and optional .code
+try {
+  await apiFetch("/api/v1/admin/orders/123/status", {
+    method: "PATCH",
+    body: JSON.stringify({ status: "shipped" }),
+  });
+} catch (err) {
+  if (err instanceof ApiError) {
+    console.error(err.status, err.message, err.code);
+  }
+}
+```
+
+TanStack Query wraps `apiFetch` inside `queryFn` and `mutationFn` callbacks, providing automatic caching, background refetching, loading states, and optimistic updates across all admin pages.
+
+## Building for Production
+
+```bash
+# Create an optimised static build in apps/admin/dist/
+bun run build
+
+# Serve the built output locally to verify before deploying
+bun run preview
+```
+
+## Testing
+
+```bash
+# Run the Vitest test suite
+bun run test
+
+# Type-check the entire app without emitting files
+bun run typecheck
+```
+
+Tests use Testing Library with jsdom and Mock Service Worker (MSW) for API mocking, so the full component tree renders against realistic response fixtures without needing a live backend.

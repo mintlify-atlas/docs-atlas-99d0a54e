@@ -1,0 +1,139 @@
+{
+  "projectType": "saas",
+  "projectName": "Avanzar In Time Shop",
+  "projectDescription": "A full-stack e-commerce platform built as a Bun monorepo with a Hono REST API backend, React admin dashboard, and Astro storefront, designed for manual-confirmation payment workflows targeting Cuba.",
+  "theme": "luma",
+  "primaryColor": "#4F46E5",
+  "lightColor": "#EEF2FF",
+  "darkColor": "#1E1B4B",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "architecture"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/environment-variables",
+              "configuration/database",
+              "configuration/authentication"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/order-lifecycle",
+              "concepts/payment-flow",
+              "concepts/product-catalog",
+              "concepts/shipping"
+            ]
+          },
+          {
+            "group": "Apps",
+            "pages": [
+              "apps/backend",
+              "apps/admin-dashboard",
+              "apps/storefront"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api-reference/overview",
+              "api-reference/authentication"
+            ]
+          },
+          {
+            "group": "Public Endpoints",
+            "pages": [
+              "api-reference/public/products",
+              "api-reference/public/categories",
+              "api-reference/public/checkout",
+              "api-reference/public/orders",
+              "api-reference/public/addresses",
+              "api-reference/public/shipping-rates"
+            ]
+          },
+          {
+            "group": "Admin Endpoints",
+            "pages": [
+              "api-reference/admin/products",
+              "api-reference/admin/categories",
+              "api-reference/admin/orders",
+              "api-reference/admin/payments",
+              "api-reference/admin/shipping-rates",
+              "api-reference/admin/users"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Bun monorepo with three apps: Hono backend, React admin SPA, Astro storefront",
+    "Full product catalog with multi-currency pricing, images, and hierarchical categories",
+    "Guest and authenticated checkout with server-side price calculation and atomic stock decrement",
+    "Manual payment confirmation workflow (Zelle, bank transfer, cash on delivery)",
+    "Order lifecycle state machine: pending_payment → paid → preparing → shipped → delivered / cancelled",
+    "Role-based access control with Better Auth (customer / staff / admin)",
+    "Drizzle ORM with PostgreSQL and full migration support via drizzle-kit",
+    "Admin dashboard for managing products, orders, payments, categories, shipping rates, and users",
+    "OpenAPI/Swagger UI served at /api/v1/docs",
+    "Optimistic-concurrency order status transitions with audit history"
+  ],
+  "publicApiSurface": [
+    "GET /api/v1/products",
+    "GET /api/v1/products/:slug",
+    "GET /api/v1/categories",
+    "GET /api/v1/shipping-rates?province=&currency=",
+    "POST /api/v1/checkout",
+    "GET /api/v1/orders (authenticated)",
+    "GET /api/v1/orders/:id (authenticated)",
+    "GET /api/v1/addresses (authenticated)",
+    "POST /api/v1/addresses (authenticated)",
+    "PATCH /api/v1/addresses/:id (authenticated)",
+    "DELETE /api/v1/addresses/:id (authenticated)",
+    "GET /api/v1/admin/products (admin)",
+    "POST /api/v1/admin/products (admin)",
+    "PATCH /api/v1/admin/products/:id (admin)",
+    "POST /api/v1/admin/products/:id/archive (admin)",
+    "POST /api/v1/admin/products/:id/prices (admin)",
+    "PATCH /api/v1/admin/products/:id/prices/:priceId (admin)",
+    "DELETE /api/v1/admin/products/:id/prices/:priceId (admin)",
+    "POST /api/v1/admin/products/:id/images (admin)",
+    "PATCH /api/v1/admin/products/:id/images/:imageId (admin)",
+    "DELETE /api/v1/admin/products/:id/images/:imageId (admin)",
+    "POST /api/v1/admin/products/:id/categories (admin)",
+    "DELETE /api/v1/admin/products/:id/categories/:categoryId (admin)",
+    "GET /api/v1/admin/categories (admin)",
+    "POST /api/v1/admin/categories (admin)",
+    "PATCH /api/v1/admin/categories/:id (admin)",
+    "DELETE /api/v1/admin/categories/:id (admin)",
+    "GET /api/v1/admin/orders (admin)",
+    "GET /api/v1/admin/orders/:id (admin)",
+    "PATCH /api/v1/admin/orders/:id/status (admin)",
+    "GET /api/v1/admin/payments (admin)",
+    "GET /api/v1/admin/payments/:id (admin)",
+    "PATCH /api/v1/admin/payments/:id/confirm (admin)",
+    "GET /api/v1/admin/shipping-rates (admin)",
+    "POST /api/v1/admin/shipping-rates (admin)",
+    "PATCH /api/v1/admin/shipping-rates/:id (admin)",
+    "DELETE /api/v1/admin/shipping-rates/:id (admin)",
+    "GET /api/v1/admin/users (admin)",
+    "PATCH /api/v1/admin/users/:id/role (admin)",
+    "GET /health"
+  ]
+}

@@ -1,0 +1,219 @@
+---
+title: "Public Products API — Storefront Catalog Endpoints"
+sidebarTitle: "Products"
+description: "GET /api/v1/products and GET /api/v1/products/:slug — retrieve active products with prices and images. Draft and archived products are hidden from the public."
+---
+
+The public products endpoints expose only products with `active` status. Products in `draft` or `archived` state are never returned from these routes — the storefront always sees a clean, curated catalog. No authentication is required for either endpoint.
+
+---
+
+## List all products
+
+Returns every active product, ordered alphabetically by name. Each product includes its full set of prices (one per currency) and images sorted by position, with position `0` being the primary image.
+
+```bash
+curl https://api.avanzarintimeshop.com/api/v1/products
+```
+
+### Response
+
+<ResponseField name="products" type="Product[]" required>
+  Array of active products ordered by name.
+
+  <Expandable title="Product object">
+    <ResponseField name="id" type="string (UUID)">
+      Unique identifier for the product.
+    </ResponseField>
+    <ResponseField name="slug" type="string">
+      URL-friendly identifier used in product detail URLs (e.g., `classic-white-watch`).
+    </ResponseField>
+    <ResponseField name="name" type="string">
+      Display name of the product.
+    </ResponseField>
+    <ResponseField name="description" type="string | null">
+      Full product description. May be `null` if not set.
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Always `"active"` for records returned by this endpoint.
+    </ResponseField>
+    <ResponseField name="stockQuantity" type="integer">
+      Current units available in inventory. Decremented atomically on each successful checkout.
+    </ResponseField>
+    <ResponseField name="prices" type="ProductPrice[]">
+      One price entry per supported currency. Each entry contains `{ id, productId, currency, amountMinor }` where `amountMinor` is in cents (e.g., `4999` = $49.99 USD).
+    </ResponseField>
+    <ResponseField name="images" type="ProductImage[]">
+      Images ordered by `position` ascending. Position `0` is the primary/hero image. Each entry contains `{ id, productId, url, alt, position }`.
+    </ResponseField>
+    <ResponseField name="createdAt" type="string (ISO 8601)">
+      Timestamp when the product was created.
+    </ResponseField>
+    <ResponseField name="updatedAt" type="string (ISO 8601)">
+      Timestamp of the last update, including stock decrements.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+**Example response — `200 OK`**
+
+```json
+{
+  "products": [
+    {
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "slug": "classic-white-watch",
+      "name": "Classic White Watch",
+      "description": "A timeless white dial watch with a leather strap.",
+      "status": "active",
+      "stockQuantity": 14,
+      "createdAt": "2024-09-01T10:00:00.000Z",
+      "updatedAt": "2024-11-15T08:30:00.000Z",
+      "prices": [
+        {
+          "id": "p1a2b3c4-0000-0000-0000-000000000001",
+          "productId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+          "currency": "USD",
+          "amountMinor": 4999
+        },
+        {
+          "id": "p1a2b3c4-0000-0000-0000-000000000002",
+          "productId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+          "currency": "CUP",
+          "amountMinor": 140000
+        }
+      ],
+      "images": [
+        {
+          "id": "img-0001-0000-0000-0000-000000000001",
+          "productId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+          "url": "https://cdn.avanzarintimeshop.com/products/classic-white-watch-front.jpg",
+          "alt": "Classic White Watch — front view",
+          "position": 0
+        },
+        {
+          "id": "img-0001-0000-0000-0000-000000000002",
+          "productId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+          "url": "https://cdn.avanzarintimeshop.com/products/classic-white-watch-side.jpg",
+          "alt": "Classic White Watch — side view",
+          "position": 1
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## Get a product by slug
+
+Returns a single active product identified by its URL slug. The response includes prices, images, and category memberships with the full category object for each membership.
+
+Returns `404` if the product does not exist **or** if its status is not `active` — draft and archived products behave as if they do not exist.
+
+```bash
+curl https://api.avanzarintimeshop.com/api/v1/products/classic-white-watch
+```
+
+### Path parameters
+
+<ParamField path="slug" type="string" required>
+  The URL-friendly identifier for the product (e.g., `classic-white-watch`). Slugs are unique across the catalog.
+</ParamField>
+
+### Response
+
+<ResponseField name="product" type="Product" required>
+  The matching active product, including nested relations.
+
+  <Expandable title="Product object (full)">
+    <ResponseField name="id" type="string (UUID)">
+      Unique identifier for the product.
+    </ResponseField>
+    <ResponseField name="slug" type="string">
+      URL-friendly product identifier.
+    </ResponseField>
+    <ResponseField name="name" type="string">
+      Display name of the product.
+    </ResponseField>
+    <ResponseField name="description" type="string | null">
+      Full product description.
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Always `"active"` for records returned by this endpoint.
+    </ResponseField>
+    <ResponseField name="stockQuantity" type="integer">
+      Current units available in inventory.
+    </ResponseField>
+    <ResponseField name="prices" type="ProductPrice[]">
+      All prices for this product, one per currency. `amountMinor` is in cents.
+    </ResponseField>
+    <ResponseField name="images" type="ProductImage[]">
+      Images ordered by `position` ascending. Position `0` is the primary image.
+    </ResponseField>
+    <ResponseField name="categories" type="ProductCategory[]">
+      Array of category memberships. Each entry contains a nested `category` object with `{ id, slug, name, parentId }`.
+    </ResponseField>
+    <ResponseField name="createdAt" type="string (ISO 8601)">
+      Timestamp when the product was created.
+    </ResponseField>
+    <ResponseField name="updatedAt" type="string (ISO 8601)">
+      Timestamp of the last update.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+**Example response — `200 OK`**
+
+```json
+{
+  "product": {
+    "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "slug": "classic-white-watch",
+    "name": "Classic White Watch",
+    "description": "A timeless white dial watch with a leather strap.",
+    "status": "active",
+    "stockQuantity": 14,
+    "createdAt": "2024-09-01T10:00:00.000Z",
+    "updatedAt": "2024-11-15T08:30:00.000Z",
+    "prices": [
+      {
+        "id": "p1a2b3c4-0000-0000-0000-000000000001",
+        "productId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "currency": "USD",
+        "amountMinor": 4999
+      }
+    ],
+    "images": [
+      {
+        "id": "img-0001-0000-0000-0000-000000000001",
+        "productId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "url": "https://cdn.avanzarintimeshop.com/products/classic-white-watch-front.jpg",
+        "alt": "Classic White Watch — front view",
+        "position": 0
+      }
+    ],
+    "categories": [
+      {
+        "productId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "categoryId": "cat-0001-0000-0000-0000-000000000001",
+        "category": {
+          "id": "cat-0001-0000-0000-0000-000000000001",
+          "slug": "mens-watches",
+          "name": "Men's Watches",
+          "parentId": "cat-root-0000-0000-0000-000000000001"
+        }
+      }
+    ]
+  }
+}
+```
+
+**Error response — `404 Not Found`**
+
+```json
+{
+  "error": "Producto no encontrado"
+}
+```

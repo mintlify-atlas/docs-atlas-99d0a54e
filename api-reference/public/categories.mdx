@@ -1,0 +1,85 @@
+---
+title: "Public Categories API — Product Category Tree"
+sidebarTitle: "Categories"
+description: "GET /api/v1/categories — returns a flat list of all categories with parentId for building hierarchical trees. No authentication required."
+---
+
+The categories endpoint returns all categories as a flat list. Each category carries a `parentId` field that references another category's `id`, enabling clients to reconstruct the full hierarchy tree on the front end. A `null` `parentId` indicates a root-level category with no parent. No authentication is required.
+
+---
+
+## List all categories
+
+Returns every category in the database, ordered alphabetically by name. The list is flat — hierarchy is expressed through `parentId` references, and tree construction is left to the client.
+
+```bash
+curl https://api.avanzarintimeshop.com/api/v1/categories
+```
+
+### Response
+
+<ResponseField name="categories" type="Category[]" required>
+  Flat array of all categories, ordered by name ascending.
+
+  <Expandable title="Category object">
+    <ResponseField name="id" type="string (UUID)">
+      Unique identifier for the category. Used as the `parentId` value on child categories.
+    </ResponseField>
+    <ResponseField name="slug" type="string">
+      URL-friendly category identifier (e.g., `mens-watches`). Unique across all categories.
+    </ResponseField>
+    <ResponseField name="name" type="string">
+      Human-readable display name (e.g., `"Men's Watches"`).
+    </ResponseField>
+    <ResponseField name="parentId" type="string (UUID) | null">
+      The `id` of the parent category, or `null` if this is a root-level category. Use this field to build a tree client-side by grouping categories by `parentId`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Info>
+  The list is intentionally flat. To render a category tree, group the results by `parentId` and recursively nest children under their parent. Root categories have `parentId: null`.
+</Info>
+
+**Example response — `200 OK`**
+
+```json
+{
+  "categories": [
+    {
+      "id": "cat-root-0000-0000-0000-000000000001",
+      "slug": "accessories",
+      "name": "Accessories",
+      "parentId": null
+    },
+    {
+      "id": "cat-root-0000-0000-0000-000000000002",
+      "slug": "watches",
+      "name": "Watches",
+      "parentId": null
+    },
+    {
+      "id": "cat-0001-0000-0000-0000-000000000001",
+      "slug": "mens-watches",
+      "name": "Men's Watches",
+      "parentId": "cat-root-0000-0000-0000-000000000002"
+    },
+    {
+      "id": "cat-0001-0000-0000-0000-000000000002",
+      "slug": "womens-watches",
+      "name": "Women's Watches",
+      "parentId": "cat-root-0000-0000-0000-000000000002"
+    },
+    {
+      "id": "cat-0002-0000-0000-0000-000000000001",
+      "slug": "watch-straps",
+      "name": "Watch Straps",
+      "parentId": "cat-root-0000-0000-0000-000000000001"
+    }
+  ]
+}
+```
+
+<Tip>
+  To filter the storefront catalog by category, fetch the products list and cross-reference with the `categories` array returned by `GET /api/v1/products/:slug`. The product-to-category mapping lives in the `productCategories` join table and is embedded in the single-product response.
+</Tip>

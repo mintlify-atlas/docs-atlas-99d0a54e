@@ -1,0 +1,87 @@
+---
+title: "Public Shipping Rates API — Look Up Delivery Costs"
+sidebarTitle: "Shipping Rates"
+description: "GET /api/v1/shipping-rates — looks up the active shipping rate for a province and currency combination. Returns 404 if no rate is configured."
+---
+
+Query the active shipping rate for a specific province and currency combination to display accurate delivery costs to customers before they complete checkout. This endpoint is public — no authentication is required. The lookup returns the first active rate that matches both the destination province and the requested currency.
+
+---
+
+## Look up a shipping rate
+
+Returns the active shipping rate for the given `province` and `currency` pair. If no active rate is configured for that combination, the endpoint returns `404` with a localized error message.
+
+```bash
+curl "https://api.avanzarintimeshop.com/api/v1/shipping-rates?province=La+Habana&currency=USD"
+```
+
+### Query parameters
+
+<ParamField query="province" type="string" required>
+  The destination province to look up (e.g., `"La Habana"`, `"Santiago de Cuba"`, `"Matanzas"`). Must be a non-empty string. The value must exactly match the province as stored in the shipping rates table — use the same province values accepted by the checkout endpoint's `recipient.province` field.
+</ParamField>
+
+<ParamField query="currency" type="string" required>
+  ISO 4217 currency code, exactly 3 characters (e.g., `"USD"`, `"CUP"`). The shipping rate table supports different prices per currency for the same province, so a province may have a USD rate and a CUP rate independently.
+</ParamField>
+
+### Response
+
+<ResponseField name="shippingRate" type="ShippingRate" required>
+  The active shipping rate record for the requested province and currency.
+
+  <Expandable title="ShippingRate fields">
+    <ResponseField name="id" type="string (UUID)">
+      Unique identifier for this shipping rate record.
+    </ResponseField>
+    <ResponseField name="province" type="string">
+      The destination province this rate applies to.
+    </ResponseField>
+    <ResponseField name="currency" type="string">
+      ISO 4217 currency code for this rate.
+    </ResponseField>
+    <ResponseField name="amountMinor" type="integer">
+      Shipping cost in the smallest currency unit (cents). For example, `500` represents $5.00 USD or 500 CUP. Divide by `100` to display as a decimal amount for USD.
+    </ResponseField>
+    <ResponseField name="active" type="boolean">
+      Always `true` for records returned by this endpoint — only active rates are surfaced publicly.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Note>
+  **`amountMinor` is in cents (the smallest currency unit).** To display a human-readable price, divide by `100`. For example, `amountMinor: 500` = **$5.00 USD**, and `amountMinor: 15000` = **150.00 CUP**. This matches how monetary values are stored and calculated throughout the entire Avanzar In Time Shop API — order subtotals, line totals, and payment amounts all use the same minor-unit convention.
+</Note>
+
+**Example response — `200 OK`**
+
+```json
+{
+  "shippingRate": {
+    "id": "rate-0001-0000-0000-0000-000000000001",
+    "province": "La Habana",
+    "currency": "USD",
+    "amountMinor": 500,
+    "active": true
+  }
+}
+```
+
+**Error response — `404 Not Found`**
+
+Returned when no active shipping rate exists for the requested province and currency combination. This means the store does not currently deliver to that province in that currency.
+
+```json
+{
+  "error": "Sin tarifa para ese destino"
+}
+```
+
+<Tip>
+  Before presenting checkout to the customer, call this endpoint with their selected province and the store's active currency. If you receive a `404`, disable the checkout button and display a "Delivery not available to this province" message. This avoids the `SHIPPING_NOT_SUPPORTED` error at order submission time.
+</Tip>
+
+### Province and currency uniqueness
+
+Each `(province, currency)` pair has at most one shipping rate in the database. The table enforces a unique constraint on this combination. Calling this endpoint with a valid pair will always return exactly one result or `404` — never multiple rates.

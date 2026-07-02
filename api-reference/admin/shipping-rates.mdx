@@ -1,0 +1,179 @@
+---
+title: "Admin Shipping Rates API — Province Rate Management"
+sidebarTitle: "Shipping Rates"
+description: "Admin endpoints to manage per-province shipping rates. Each rate is unique by province and currency combination and can be activated or deactivated."
+---
+
+Shipping rates define the delivery cost charged to customers based on their province and the order currency. Each rate is uniquely identified by the combination of `province` and `currency` — you cannot have two active rates for the same province in the same currency. Admin staff manage these via the API or the dashboard. Rates can be deactivated without deletion, which is useful during regional coverage changes or pricing reviews.
+
+<Note>
+  All endpoints in this section require the `admin` or `staff` role. Requests without a valid session return **401**; requests with insufficient role return **403**.
+</Note>
+
+---
+
+## Endpoints
+
+### List Shipping Rates
+
+<br />
+
+```
+GET /api/v1/admin/shipping-rates
+```
+
+Returns all shipping rates, including inactive ones. The storefront checkout only considers active rates, but the admin list shows the full set for management purposes.
+
+**Response `200`**
+
+```json
+{
+  "shippingRates": [
+    {
+      "id": "rate-aabb1122-3344-5566-7788-99aabbccddee",
+      "province": "Miranda",
+      "currency": "USD",
+      "amountMinor": 500,
+      "active": true
+    },
+    {
+      "id": "rate-bbcc2233-4455-6677-8899-aabbccddeeff",
+      "province": "Zulia",
+      "currency": "USD",
+      "amountMinor": 700,
+      "active": false
+    },
+    {
+      "id": "rate-ccdd3344-5566-7788-99aa-bbccddeeff00",
+      "province": "Caracas",
+      "currency": "VES",
+      "amountMinor": 250000,
+      "active": true
+    }
+  ]
+}
+```
+
+---
+
+### Create Shipping Rate
+
+<br />
+
+```
+POST /api/v1/admin/shipping-rates
+```
+
+Creates a new shipping rate for a province and currency pair. The `(province, currency)` combination must be unique — attempting to create a duplicate returns a database unique constraint error.
+
+**Request Body**
+
+<ParamField body="province" type="string" required>
+  Name of the Venezuelan province or state (e.g. `"Miranda"`, `"Caracas"`, `"Zulia"`). Must match the values used in customer address forms.
+</ParamField>
+
+<ParamField body="currency" type="string" required>
+  ISO 4217 currency code for this rate (e.g. `"USD"`, `"VES"`). Must match the currencies available in your product prices.
+</ParamField>
+
+<ParamField body="amountMinor" type="integer" required>
+  Shipping cost in minor currency units (e.g. `500` = $5.00 USD, `250000` = 2500.00 VES).
+</ParamField>
+
+<ParamField body="active" type="boolean">
+  Whether this rate is immediately available for checkout. Defaults to `true` if omitted.
+</ParamField>
+
+**Example Request**
+
+```bash
+curl -X POST https://api.avanzarintimeshop.com/api/v1/admin/shipping-rates \
+  -H "Content-Type: application/json" \
+  -H "Cookie: session=<your-session-cookie>" \
+  -d '{
+    "province": "Miranda",
+    "currency": "USD",
+    "amountMinor": 500,
+    "active": true
+  }'
+```
+
+**Response `201`**
+
+```json
+{
+  "shippingRate": {
+    "id": "rate-aabb1122-3344-5566-7788-99aabbccddee",
+    "province": "Miranda",
+    "currency": "USD",
+    "amountMinor": 500,
+    "active": true
+  }
+}
+```
+
+---
+
+### Update Shipping Rate
+
+<br />
+
+```
+PATCH /api/v1/admin/shipping-rates/:id
+```
+
+Partially updates a shipping rate. All fields are optional — only the fields you include will be changed. This is the primary way to adjust prices or toggle a rate's active state.
+
+**Request Body** — all fields optional
+
+<ParamField body="province" type="string">
+  Updated province name.
+</ParamField>
+
+<ParamField body="currency" type="string">
+  Updated ISO 4217 currency code.
+</ParamField>
+
+<ParamField body="amountMinor" type="integer">
+  Updated shipping cost in minor units.
+</ParamField>
+
+<ParamField body="active" type="boolean">
+  Set to `false` to disable the rate without deleting it, or `true` to re-enable it.
+</ParamField>
+
+**Response `200`**
+
+```json
+{
+  "shippingRate": {
+    "id": "rate-aabb1122-3344-5566-7788-99aabbccddee",
+    "province": "Miranda",
+    "currency": "USD",
+    "amountMinor": 600,
+    "active": true
+  }
+}
+```
+
+**Error responses:** `404` if the rate ID does not exist.
+
+---
+
+### Delete Shipping Rate
+
+<br />
+
+```
+DELETE /api/v1/admin/shipping-rates/:id
+```
+
+Permanently deletes a shipping rate. Returns **204 No Content** on success.
+
+**Error responses:** `404` if the rate ID does not exist.
+
+---
+
+<Tip>
+  **Prefer deactivation over deletion.** Setting `active: false` via the PATCH endpoint effectively disables a rate — the checkout flow will return a `SHIPPING_NOT_SUPPORTED` error for orders placed from that province in that currency, without removing the rate configuration. This lets you re-enable it later without recreating it. Hard-deleting a rate should be reserved for provinces you are certain you will never serve again.
+</Tip>

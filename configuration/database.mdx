@@ -1,0 +1,119 @@
+---
+title: "Database Setup and Migration with Drizzle ORM"
+sidebarTitle: "Database"
+description: "Set up PostgreSQL with Docker Compose, run Drizzle ORM migrations, and manage the schema for Avanzar In Time Shop's 14-table data model."
+---
+
+Avanzar In Time Shop uses PostgreSQL 17 (Alpine) as its data store, provisioned locally via Docker Compose. The schema is defined in TypeScript using Drizzle ORM inside the `@avanzar/db` package, which exports both the Drizzle client (`db`) and all table definitions. Schema migrations are managed by drizzle-kit, which reads `DATABASE_URL` from the environment and applies SQL migration files from the `packages/db/drizzle/` directory. All database commands are available as `bun run db:*` scripts from the monorepo root.
+
+## Starting PostgreSQL
+
+Bring up the PostgreSQL container in the background with a single command:
+
+```bash
+bun run db:up
+```
+
+This runs `docker compose up -d`. Docker Compose reads `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, and `POSTGRES_HOST_PORT` from your `.env` file at the monorepo root. The container is named `avanzar_postgres` and data is persisted in the named volume `avanzar_pgdata`.
+
+The service includes a healthcheck so dependent tooling can wait for the database to be ready before connecting:
+
+```yaml
+healthcheck:
+  test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-avanzar} -d ${POSTGRES_DB:-avanzar}"]
+  interval: 5s
+  timeout: 5s
+  retries: 10
+```
+
+## Running Migrations
+
+Apply all pending migrations to your database with:
+
+```bash
+bun run db:migrate
+```
+
+This delegates to `bun run --env-file=../../.env drizzle-kit migrate` inside `packages/db`, loading `DATABASE_URL` from the monorepo root `.env` before drizzle-kit runs. The initial migration file is located at:
+
+```
+packages/db/drizzle/0000_violet_shriek.sql
+```
+
+This file creates all 14 tables, the 5 PostgreSQL enum types, and the necessary foreign key constraints in a single transaction. Always run migrations before starting the backend for the first time or after pulling schema changes.
+
+## Available Database Commands
+
+Run all of the following from the **monorepo root**:
+
+| Command | Description |
+|---|---|
+| `bun run db:generate` | Introspect schema changes and generate a new SQL migration file in `packages/db/drizzle/` |
+| `bun run db:migrate` | Apply all pending migration files to the target database |
+| `bun run db:push` | Push the current schema directly to the database without creating a migration file — development only |
+| `bun run db:studio` | Open Drizzle Studio in your browser for a visual GUI over the live database |
+| `bun run db:up` | Start the PostgreSQL Docker container in detached mode |
+| `bun run db:down` | Stop and remove the PostgreSQL Docker container |
+
+<Tip>
+  Use `bun run db:studio` during development to browse rows, inspect foreign key relationships, and manually edit data without writing raw SQL. Drizzle Studio runs entirely locally and reads `DATABASE_URL` from your `.env` file.
+</Tip>
+
+## Schema Overview
+
+The schema is defined in `packages/db/src/schema/` and is divided into four functional domains.
+
+### Enum Types
+
+Five PostgreSQL native enums are defined in `packages/db/src/schema/enums.ts`:
+
+| Enum | Values |
+|---|---|
+| `user_role` | `customer`, `staff`, `admin` |
+| `product_status` | `draft`, `active`, `archived` |
+| `order_status` | `pending_payment`, `paid`, `preparing`, `shipped`, `delivered`, `cancelled` |
+| `payment_method` | `cod`, `transfer_local`, `zelle` |
+| `payment_status` | `pending`, `confirmed`, `rejected` |
+
+`product_status` uses `archived` as its soft-delete sentinel — rows are never hard-deleted from the products table. `payment_status` reflects the manual confirmation workflow where staff or admin confirms or rejects each payment.
+
+### Tables by Domain
+
+**Auth** — managed by Better Auth via the Drizzle adapter:
+
+| Table | Purpose |
+|---|---|
+| `user` | Core user record with `name`, `email`, `role`, and timestamps |
+| `session` | Active session tokens with expiry and user-agent metadata |
+| `account` | OAuth provider link records (also used for email+password) |
+| `verification` | Time-limited verification tokens for email flows |
+
+**Catalog** — product data:
+
+| Table | Purpose |
+|---|---|
+| `products` | Product master record with `product_status` and `user_id` ownership |
+| `product_prices` | Versioned pricing rows linked to a product |
+| `product_images` | Ordered image URLs attached to a product |
+| `categories` | Flat category taxonomy |
+| `product_categories` | Many-to-many join between products and categories |
+
+**Commerce** — order lifecycle:
+
+| Table | Purpose |
+|---|---|
+| `orders` | Top-level order record linked to a user and shipping address |
+| `order_items` | Line items within an order (product, quantity, unit price) |
+| `order_status_history` | Append-only log of every `order_status` transition |
+| `payments` | Payment record with `payment_method` and `payment_status` |
+
+**Address / Shipping:**
+
+| Table | Purpose |
+|---|---|
+| `addresses` | Saved delivery addresses belonging to a user |
+| `shipping_rates` | Flat-rate shipping fee configurations |
+
+<Note>
+  The Drizzle config at `packages/db/drizzle.config.ts` reads `DATABASE_URL` directly from `process.env`. The `db:migrate`, `db:push`, and `db:studio` scripts all inject the env file with `--env-file=../../.env` so the variable is always available when drizzle-kit runs.
+</Note>

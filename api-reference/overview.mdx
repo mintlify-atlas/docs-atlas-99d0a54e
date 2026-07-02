@@ -1,0 +1,118 @@
+---
+title: "Avanzar REST API Reference Overview"
+sidebarTitle: "Overview"
+description: "Avanzar In Time Shop exposes a versioned REST API at /api/v1 with public storefront endpoints and admin-only management endpoints protected by role-based auth."
+---
+
+The Avanzar In Time Shop backend is a Hono v4 REST API running on Bun. Every response body is JSON — successes and errors alike follow a consistent shape. All business endpoints live under the `/api/v1` prefix so the version can evolve independently. An interactive Swagger UI is available at `/api/v1/docs` and the raw OpenAPI spec is served at `/api/v1/openapi.json`, making it easy to explore and test every route without leaving the browser.
+
+## Base URL
+
+The development server listens on port `3000`:
+
+```
+http://localhost:3000
+```
+
+All API endpoints are prefixed with `/api/v1`. For example, the products list is available at `http://localhost:3000/api/v1/products`.
+
+## Endpoint Groups
+
+The API is split into two families: **public** routes that the storefront and authenticated customers can reach, and **admin** routes gated behind `requireAdmin` middleware.
+
+<CardGroup cols={2}>
+  <Card title="Public: Products" icon="box" href="/api-reference/public/products">
+    Browse and search the active product catalog available to all storefront visitors.
+  </Card>
+  <Card title="Public: Categories" icon="tag" href="/api-reference/public/categories">
+    Retrieve the category tree used to organise and filter products.
+  </Card>
+  <Card title="Public: Checkout" icon="cart-shopping" href="/api-reference/public/checkout">
+    Submit orders, select shipping rates, and initiate the payment flow.
+  </Card>
+  <Card title="Public: Orders" icon="receipt" href="/api-reference/public/orders">
+    Let authenticated customers view and track their own order history.
+  </Card>
+  <Card title="Public: Addresses" icon="location-dot" href="/api-reference/public/addresses">
+    Create, update, and manage saved delivery addresses for a customer account.
+  </Card>
+  <Card title="Public: Shipping Rates" icon="truck" href="/api-reference/public/shipping-rates">
+    Fetch available shipping options and their rates for a given destination.
+  </Card>
+  <Card title="Admin: Products" icon="screwdriver-wrench" href="/api-reference/admin/products">
+    Create, update, archive, and manage product inventory — staff and admin only.
+  </Card>
+  <Card title="Admin: Orders" icon="clipboard-list" href="/api-reference/admin/orders">
+    View all orders, advance order status, and confirm or reject payments.
+  </Card>
+</CardGroup>
+
+## Authentication
+
+The API uses **session cookies** issued by [Better Auth](https://better-auth.com) — there are no API keys or Bearer tokens. Auth endpoints live at `/api/auth/*` and are handled separately from the versioned API.
+
+Two middleware guards protect business routes:
+
+- **`requireSession`** — requires any valid session. Used on customer-facing routes such as order history and saved addresses.
+- **`requireAdmin`** — requires a session whose role is `staff` or `admin`. Used on every route under `/api/v1/admin/`.
+
+See the [Authentication guide](/api-reference/authentication) for sign-up, sign-in, and cookie usage details.
+
+## Response Format
+
+All responses use a consistent JSON envelope so client code can handle them uniformly.
+
+**Success responses** wrap the returned data in a named key that matches the resource:
+
+```json
+{ "products": [ { "id": "...", "name": "..." } ] }
+```
+
+```json
+{ "order": { "id": "...", "status": "pending_payment" } }
+```
+
+**Error responses** always carry an `"error"` string. Some errors include additional fields to give the client machine-readable context:
+
+```json
+{ "error": "El slug del producto ya está en uso", "code": "PRODUCT_SLUG_TAKEN" }
+```
+
+```json
+{ "error": "Stock insuficiente", "productId": "abc123", "available": 2 }
+```
+
+## HTTP Status Codes
+
+| Status | Meaning | When it is returned |
+|--------|---------|---------------------|
+| `200 OK` | Success | Successful `GET` or `PATCH` |
+| `201 Created` | Resource created | Successful `POST` that produces a new resource |
+| `204 No Content` | Deleted | Successful `DELETE` — no body |
+| `400 Bad Request` | Bad input | Invalid request body schema or query parameters |
+| `401 Unauthorized` | No session | Request reaches a protected route without a valid session cookie |
+| `403 Forbidden` | Insufficient role | Authenticated user lacks the `staff` or `admin` role |
+| `404 Not Found` | Missing resource | The requested product, order, address, etc. does not exist |
+| `409 Conflict` | Duplicate | Slug already taken, duplicate price currency for a product, or double payment confirmation |
+| `422 Unprocessable Entity` | Business rule violation | Invalid order status transition, insufficient stock at checkout |
+| `503 Service Unavailable` | Temporary failure | Order number collision after maximum retry attempts |
+
+## Healthcheck
+
+A lightweight healthcheck endpoint is available outside the versioned prefix and requires no authentication:
+
+```
+GET /health
+```
+
+**Response:**
+
+```json
+{ "status": "ok" }
+```
+
+**Example with curl:**
+
+```bash
+curl http://localhost:3000/health
+```

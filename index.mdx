@@ -1,20 +1,97 @@
 ---
-title: "Introduction"
-description: "Welcome to your project"
+title: "Avanzar In Time Shop: Full-Stack E-Commerce Platform"
+sidebarTitle: "Home"
+description: "A Bun monorepo e-commerce platform with a Hono REST API, React admin dashboard, and Astro storefront built for manual-confirmation payment workflows."
 ---
 
-Write a short description of your product here. What it does, who it's for, and what they can accomplish with it.
+Avanzar In Time Shop is a production-ready, self-hosted e-commerce platform built as a Bun monorepo. It ships three tightly integrated apps — a **Hono REST API backend**, a **React admin dashboard**, and an **Astro storefront** — backed by PostgreSQL via Drizzle ORM. The platform is purpose-built for manual payment confirmation workflows (Zelle, bank transfers, cash on delivery) and supports guest and authenticated checkout with server-side price calculation and atomic stock management.
 
-<Tip>
-  Ready to make this your own? Start by editing this page. Update your `docs.json` file to customize your site. Then fill out the [Quickstart](/quickstart) page.
-</Tip>
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Spin up the full stack locally in minutes with Docker and Bun.
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/architecture">
+    Understand the monorepo structure, apps, and shared packages.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference/overview">
+    Explore every REST endpoint — public storefront and admin routes.
+  </Card>
+  <Card title="Core Concepts" icon="book-open" href="/concepts/order-lifecycle">
+    Learn how orders, payments, and the product catalog work together.
+  </Card>
+</CardGroup>
 
-<Card title="Quickstart" icon="rocket" href="/quickstart">
-  This card links to the quickstart page in your project.
-</Card>
-<Card title="Components" icon="puzzle-piece" href="https://mintlify.com/docs/components">
-  Add cards, callouts, steps, tabs, and more to design and structure your pages.
-</Card>
-<Card title="Settings" icon="gear" href="https://mintlify.com/docs/organize/settings">
-  Set your site name, branding, and navigation in the `docs.json` file.
-</Card>
+## Platform Overview
+
+The shop is organized as a monorepo with three applications and two shared packages:
+
+<CardGroup cols={3}>
+  <Card title="Backend" icon="server" href="/apps/backend">
+    Hono API on Bun with Better Auth, Drizzle ORM, and OpenAPI/Swagger UI.
+  </Card>
+  <Card title="Admin Dashboard" icon="gauge" href="/apps/admin-dashboard">
+    React 19 SPA for managing products, orders, payments, and users.
+  </Card>
+  <Card title="Storefront" icon="store" href="/apps/storefront">
+    Astro-based public-facing shop with product catalog and checkout.
+  </Card>
+</CardGroup>
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Multi-Currency Pricing" icon="coins">
+    Products support multiple currencies with prices stored in minor units (cents) per ISO 4217.
+  </Card>
+  <Card title="Manual Payment Confirmation" icon="circle-check">
+    Admin staff confirm payments (Zelle, transfer, COD) manually with full audit trail.
+  </Card>
+  <Card title="Order State Machine" icon="arrow-right-arrow-left">
+    Orders follow a strict lifecycle: pending_payment → paid → preparing → shipped → delivered / cancelled.
+  </Card>
+  <Card title="Guest Checkout" icon="user-check">
+    Customers can check out without creating an account. Authenticated users get order history.
+  </Card>
+  <Card title="Atomic Stock Control" icon="warehouse">
+    Stock is decremented atomically at checkout to prevent overselling under concurrency.
+  </Card>
+  <Card title="Role-Based Access" icon="shield-halved">
+    Three roles (customer, staff, admin) with route-level enforcement via Better Auth.
+  </Card>
+</CardGroup>
+
+## Get Started
+
+<Steps>
+  <Step title="Install dependencies">
+    Clone the repo and install all workspace dependencies with Bun.
+    ```bash
+    git clone https://github.com/ItsJhonAlex/Ecommerce.git
+    cd Ecommerce
+    bun install
+    ```
+  </Step>
+  <Step title="Configure environment">
+    Copy `.env.example` to `.env` and fill in your database credentials and Better Auth secret.
+    ```bash
+    cp .env.example .env
+    ```
+  </Step>
+  <Step title="Start the database">
+    Spin up PostgreSQL with Docker Compose, then run migrations.
+    ```bash
+    bun run db:up
+    bun run db:migrate
+    ```
+  </Step>
+  <Step title="Run all apps">
+    Start the backend, admin dashboard, and storefront concurrently.
+    ```bash
+    bun run dev
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  The backend runs on port **3000**, the storefront on **4321**, and the admin dashboard on **5174** by default. See the [environment variables reference](/configuration/environment-variables) for all available options.
+</Note>

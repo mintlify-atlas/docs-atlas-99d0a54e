@@ -1,0 +1,145 @@
+---
+title: "Monorepo Architecture and App Structure"
+sidebarTitle: "Architecture"
+description: "Avanzar In Time Shop is organized as a Bun monorepo with three apps and two shared packages, each with a clearly defined responsibility boundary."
+---
+
+Avanzar In Time Shop is structured as a Bun workspace monorepo where every deployable surface — the REST API, the admin SPA, and the public storefront — lives under `apps/`, while cross-cutting concerns like the database schema and validation rules are extracted into `packages/`. This layout enforces clean dependency boundaries: apps consume packages, but packages never depend on apps, and the single `.env` file at the root is the only shared runtime configuration point.
+
+## Directory Structure
+
+```plaintext
+.
+├── apps/
+│   ├── backend/       # @avanzar/backend — Hono REST API
+│   ├── admin/         # @avanzar/admin — React admin SPA
+│   └── storefront/    # @avanzar/storefront — Astro public storefront
+├── packages/
+│   ├── db/            # @avanzar/db — Drizzle ORM schema + client
+│   └── shared/        # @avanzar/shared — Zod schemas shared across apps
+├── .env               # Single .env at monorepo root
+├── docker-compose.yml # PostgreSQL service
+└── package.json       # Root workspace manifest
+```
+
+<Note>
+  All apps load environment variables from the single `.env` file at the monorepo root using the `--env-file=../../.env` flag. There are no per-app `.env` files — every variable is defined in one place.
+</Note>
+
+## Apps
+
+<CardGroup cols={2}>
+  <Card title="@avanzar/backend" icon="server">
+    **Hono v4 REST API** — the authoritative backend for all data and business logic. Runs on port 3000.
+  </Card>
+  <Card title="@avanzar/admin" icon="layout-dashboard">
+    **React 19 admin SPA** — staff and admin interface for managing the shop. Runs on port 5174.
+  </Card>
+  <Card title="@avanzar/storefront" icon="store">
+    **Astro v6 storefront** — the customer-facing public site. Runs on port 4321.
+  </Card>
+  <Card title="@avanzar/shared" icon="package">
+    **Zod v4 schemas** — validation logic consumed by both the backend and the admin SPA.
+  </Card>
+</CardGroup>
+
+### Backend (`@avanzar/backend`)
+
+The backend is a [Hono v4](https://hono.dev) application that serves the entire API surface under the `/api/v1` prefix. It mounts middleware for request logging and CORS (configured to allow credentials from the storefront and admin origins), delegates all auth-related requests at `/api/auth/*` to Better Auth, and exposes a `/health` endpoint for liveness checks.
+
+Key responsibilities:
+
+- **Authentication** — Better Auth v1 with email + password sign-in, cookie-based sessions, and three user roles: `customer`, `staff`, and `admin`.
+- **Business logic** — order creation, stock management, payment status transitions, and shipping rate resolution.
+- **Validation** — request bodies are validated against `@avanzar/shared` Zod schemas before reaching any handler.
+- **Database access** — all queries go through the `@avanzar/db` Drizzle client; no raw SQL in route handlers.
+- **API docs** — Swagger UI served at `/api/v1/docs` via `@hono/swagger-ui`.
+
+The dev script runs with `--hot` for instant backend reloads during development.
+
+### Admin Dashboard (`@avanzar/admin`)
+
+The admin SPA is built with **React 19**, bundled by **Vite v8**, and styled with **Tailwind CSS v4**. It communicates with the backend exclusively through the REST API — there is no direct database access from the admin.
+
+Key dependencies:
+
+- **TanStack Query v5** for server state management and cache invalidation
+- **Radix UI** for accessible, unstyled primitive components
+- **React Router v8** for client-side routing
+- **Better Auth** client-side SDK for session management
+- **Sonner** for toast notifications
+- **Vitest + Testing Library** for unit and component tests
+
+### Storefront (`@avanzar/storefront`)
+
+The storefront is an **Astro v6** site that handles the public-facing catalog, product detail pages, cart state, and the checkout flow. It uses Astro's island architecture to keep the default output static or server-rendered while adding client-side interactivity only where needed. It imports validation schemas from `@avanzar/shared` to validate checkout payloads before they reach the API.
+
+## Shared Packages
+
+### `@avanzar/db`
+
+The `@avanzar/db` package is the single source of truth for the database schema. It contains a **Drizzle ORM** schema spread across multiple files — one per domain — and exports both the schema objects and a configured `postgres` client instance.
+
+Schema files and their contents:
+
+| File | Tables / Enums |
+|---|---|
+| `enums.ts` | `user_role`, `product_status`, `order_status`, `payment_method`, `payment_status` |
+| `auth.ts` | Better Auth managed tables (users, sessions, accounts, verifications) |
+| `catalog.ts` | Products and categories |
+| `addresses.ts` | Customer addresses |
+| `orders.ts` | Orders and order items |
+| `payments.ts` | Payment records |
+| `shipping.ts` | Province-based shipping rate lookup |
+| `relations.ts` | Drizzle query-API relation definitions |
+
+The package exposes two entry points: `.` for the client and schema, and `./schema` for schema-only imports. `drizzle-kit` is scoped to this package, so all `db:generate`, `db:migrate`, `db:push`, and `db:studio` commands run from within it (proxied via root-level scripts).
+
+### `@avanzar/shared`
+
+The `@avanzar/shared` package contains **Zod v4** validation schemas that are consumed by both the backend (request validation) and the admin SPA (form validation). Every export is re-exported from a single `src/index.ts` barrel, so consumers import from `@avanzar/shared` without knowing the internal file layout.
+
+Modules exported:
+
+| Module | Purpose |
+|---|---|
+| `catalog.ts` | Product and category creation/update schemas |
+| `addresses.ts` | Customer address schemas |
+| `checkout.ts` | `checkoutSchema` — the full checkout payload |
+| `order-status.ts` | Order status transition validation |
+| `orders.ts` | Order query and filter schemas |
+| `payments.ts` | Payment confirmation and rejection schemas |
+| `shipping.ts` | Shipping rate upsert schemas |
+| `users.ts` | User registration and profile update schemas |
+
+## Request Flow
+
+The following describes how a checkout submission travels through the system:
+
+1. **Storefront** collects the cart, customer details, and selected payment method, then validates the payload locally against `checkoutSchema` from `@avanzar/shared`.
+2. **POST /api/v1/checkout** — the validated payload is sent to the backend. Hono middleware logs the request and verifies CORS origin.
+3. **Backend validation** — the route handler re-validates the body against `checkoutSchema`. Any mismatch returns a structured `400` response before any database work begins.
+4. **Price resolution** — the handler fetches current product prices from the database to prevent client-side price tampering.
+5. **Atomic transaction** — inside a single Drizzle transaction: stock is decremented for each line item (with a conflict check to prevent overselling), an order record is inserted, and a payment record is created with status `pending`.
+6. **Response** — the new order ID and payment instructions are returned to the storefront. The order sits in `pending_payment` status until a staff member confirms the payment in the admin dashboard.
+
+## Authentication Flow
+
+Better Auth manages the entire authentication lifecycle. The Hono entry point mounts the Better Auth handler at `/api/auth/*` for both `GET` and `POST` methods:
+
+```ts
+app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
+```
+
+Session state is maintained via **HTTP-only cookies**. The backend defines two Hono middleware helpers used throughout protected routes:
+
+- **`requireSession`** — verifies that a valid session cookie is present and injects the authenticated user object into the Hono context. Returns `401` if no session is found.
+- **`requireAdmin`** — extends `requireSession` and additionally checks that the user's role is `admin` or `staff`. Returns `403` for authenticated users without sufficient privileges.
+
+The three roles and their intended scopes:
+
+| Role | Access |
+|---|---|
+| `customer` | Storefront checkout, own order history |
+| `staff` | Admin dashboard — order management, payment confirmation |
+| `admin` | Full admin dashboard access including user management and configuration |
