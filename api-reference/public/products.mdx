@@ -1,7 +1,7 @@
 ---
 title: "Public Products API — Storefront Catalog Endpoints"
 sidebarTitle: "Products"
-description: "GET /api/v1/products and GET /api/v1/products/:slug — retrieve active products with prices and images. Draft and archived products are hidden from the public."
+description: "GET /api/v1/products and GET /api/v1/products/:slug — browse the active catalog with prices and images. Draft and archived products are never returned."
 ---
 
 The public products endpoints expose only products with `active` status. Products in `draft` or `archived` state are never returned from these routes — the storefront always sees a clean, curated catalog. No authentication is required for either endpoint.

@@ -1,7 +1,7 @@
 ---
-title: "Admin Dashboard: React SPA for Store Management"
+title: "Admin Dashboard: React SPA for Store Management App"
 sidebarTitle: "Admin Dashboard"
-description: "The Avanzar admin dashboard is a React 19 SPA with TanStack Query, Radix UI, and Tailwind v4 for managing products, orders, payments, and users."
+description: "The Avanzar admin dashboard is a React 19 SPA with TanStack Query, Radix UI, and Tailwind v4 for managing products, orders, and payments."
 ---
 
 The Avanzar admin dashboard is a React 19 single-page application built with Vite. It uses TanStack Query for all server-state management and background refetching, Radix UI primitives for accessible UI components, and Tailwind v4 for utility-first styling. Session management is handled by the Better Auth client, which stores an `httpOnly` session cookie shared with the backend. React Router v8 drives client-side navigation across the protected admin pages.
@@ -15,7 +15,7 @@ bun run dev:admin
 ```
 
 <Note>
-  The admin app proxies all `/api/*` requests to the backend running at `http://localhost:3000`. The backend must be running before you open the dashboard. To change the backend URL, update the `apiFetch` base in `apps/admin/src/lib/api.ts`.
+  The admin app proxies all `/api/*` requests to the backend running at `http://localhost:3000` via the Vite dev server proxy configured in `apps/admin/vite.config.ts`. The backend must be running before you open the dashboard.
 </Note>
 
 ## Features
@@ -29,15 +29,6 @@ bun run dev:admin
   </Card>
   <Card title="Payments" icon="credit-card">
     List pending and confirmed payments side by side. Confirm a payment by supplying a bank reference number, which atomically promotes the linked order to `paid`.
-  </Card>
-  <Card title="Categories" icon="tag">
-    Create and manage product categories. The category model supports a parent–child hierarchy for building nested navigation trees in the storefront.
-  </Card>
-  <Card title="Shipping Rates" icon="truck">
-    Define per-province shipping rates in multiple currencies. Rates are consumed by the public API and used during checkout to compute delivery costs.
-  </Card>
-  <Card title="Users" icon="users">
-    Browse registered users and update their roles (e.g. promote a user to `admin`). A guard on the backend prevents admins from downgrading their own role.
   </Card>
 </CardGroup>
 
@@ -55,8 +46,11 @@ export const router = createBrowserRouter([
     children: [
       { element: <Layout />, children: [
         { path: "orders", element: <OrdersListPage /> },
+        { path: "orders/:id", element: <OrderDetailPage /> },
+        { path: "payments", element: <PaymentsListPage /> },
         { path: "products", element: <ProductsListPage /> },
-        // ...
+        { path: "products/new", element: <ProductCreatePage /> },
+        { path: "products/:id", element: <ProductEditorPage /> },
       ]},
     ],
   },
@@ -76,7 +70,7 @@ const queryClient = createQueryClient(() => {
 
 ## API Communication
 
-All HTTP calls go through the `apiFetch` wrapper in `apps/admin/src/lib/api.ts`. It uses the browser's native `fetch` with `credentials: "include"` so the session cookie is attached to every request, and parses non-2xx responses into typed `ApiError` instances:
+All HTTP calls go through the `apiFetch` wrapper in `apps/admin/src/lib/api.ts`. It uses relative paths proxied through Vite, attaches `credentials: "include"` so the session cookie travels with every request, and parses non-2xx responses into typed `ApiError` instances:
 
 ```typescript
 // Successful call — returns typed data

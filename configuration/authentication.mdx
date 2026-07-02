@@ -78,13 +78,14 @@ Apply `requireSession` to any route that requires a logged-in user (e.g., viewin
 
 The `seed:admin` script provides an interactive bootstrap flow to create the first admin account. It prompts for a name, email, and password, calls the Better Auth sign-up API, then immediately promotes the user's role to `admin` via a direct database update. The script is idempotent — if the email already exists, it skips sign-up and only updates the role.
 
-Run it from the **monorepo root**:
+The script is defined in `apps/backend/package.json`. Run it from the **`apps/backend` directory**:
 
 ```bash
+cd apps/backend
 bun run seed:admin
 ```
 
-The script delegates to `apps/backend/src/scripts/create-admin.ts` with the monorepo `.env` file loaded. You will be prompted interactively:
+This executes `apps/backend/src/scripts/create-admin.ts` with the monorepo `.env` file loaded via `--env-file=../../.env`. You will be prompted interactively:
 
 ```
 Nombre del admin: Jane Doe

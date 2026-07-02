@@ -1,7 +1,7 @@
 ---
-title: "Checkout API — Submit Orders with Payment"
+title: "Checkout API — Place Orders and Process Payments"
 sidebarTitle: "Checkout"
-description: "POST /api/v1/checkout — creates an order with items, shipping, and a pending payment record. Supports guest and authenticated checkout with server-side price calculation."
+description: "POST /api/v1/checkout — atomically creates an order and pending payment with server-side pricing. Supports both guest and authenticated shoppers."
 ---
 
 The checkout endpoint is the core of the purchase flow. It accepts the buyer details, recipient address, cart items, and payment method, then atomically creates an order, decrements product stock, records status history, and creates a pending payment — all within a single database transaction. Both guest shoppers (no session) and authenticated users are supported.
@@ -126,7 +126,7 @@ curl -X POST https://api.avanzarintimeshop.com/api/v1/checkout \
 
   <Expandable title="Order fields">
     <ResponseField name="id" type="string (UUID)">Unique order identifier.</ResponseField>
-    <ResponseField name="orderNumber" type="string">Human-readable order reference (e.g., `"ORD-20241115-A3F2"`). Unique across all orders.</ResponseField>
+    <ResponseField name="orderNumber" type="string">Human-readable order reference in the format `AVZ-YYYYMMDD-XXXX` (e.g., `"AVZ-20241115-3742"`). Unique across all orders.</ResponseField>
     <ResponseField name="userId" type="string | null">ID of the authenticated user, or `null` for guest orders.</ResponseField>
     <ResponseField name="status" type="string">Always `"pending_payment"` immediately after checkout.</ResponseField>
     <ResponseField name="currency" type="string">The currency code used for this order.</ResponseField>
@@ -156,7 +156,7 @@ curl -X POST https://api.avanzarintimeshop.com/api/v1/checkout \
 {
   "order": {
     "id": "ord-0001-0000-0000-0000-000000000001",
-    "orderNumber": "ORD-20241115-A3F2",
+    "orderNumber": "AVZ-20241115-3742",
     "userId": null,
     "status": "pending_payment",
     "currency": "USD",
@@ -199,7 +199,8 @@ curl -X POST https://api.avanzarintimeshop.com/api/v1/checkout \
 | `422` | `INSUFFICIENT_STOCK` | One or more requested items has less stock than the requested quantity. The `productId` of the first offending item is included in the error body. |
 | `422` | `SHIPPING_NOT_SUPPORTED` | No active shipping rate exists for the combination of `recipient.province` and `currency`. The `province` is included in the error body. |
 | `422` | `PRODUCT_NOT_FOUND` | One or more `productId` values in `items` do not exist in the catalog. |
-| `422` | `PRODUCT_NOT_ACTIVE` | One or more products referenced in `items` exists but is in `draft` or `archived` status. |
+| `422` | `PRODUCT_NOT_AVAILABLE` | One or more products referenced in `items` exists but is not in `active` status (`draft` or `archived`). |
+| `422` | `PRICE_NOT_AVAILABLE` | A product in `items` has no price configured for the requested `currency`. The `productId` and `currency` are included in the error body. |
 | `503` | `ORDER_NUMBER_COLLISION` | The server failed to generate a unique order number after 5 attempts. Retry the request. |
 
 **Example error — `422 Unprocessable Entity`**

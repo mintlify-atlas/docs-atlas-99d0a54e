@@ -1,7 +1,7 @@
 ---
-title: "Order Lifecycle and Status State Machine"
+title: "Order Lifecycle: Status State Machine & Transitions"
 sidebarTitle: "Order Lifecycle"
-description: "Orders in Avanzar follow a strict state machine from pending_payment through fulfillment, with optimistic-concurrency transitions and a full audit history trail."
+description: "Orders in Avanzar follow a six-status state machine. Transitions are validated against a fixed allow-list with a full audit history trail."
 ---
 
 Every order in Avanzar In Time Shop progresses through a strict six-status state machine. Transitions are validated against a fixed allow-list — no arbitrary jumps are permitted. Each status change is persisted to an append-only `order_status_history` table so administrators always have a complete, tamper-evident audit trail of who changed what and when.

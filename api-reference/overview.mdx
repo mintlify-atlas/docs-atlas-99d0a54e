@@ -1,7 +1,7 @@
 ---
-title: "Avanzar REST API Reference Overview"
+title: "Avanzar In Time Shop – REST API Reference Overview"
 sidebarTitle: "Overview"
-description: "Avanzar In Time Shop exposes a versioned REST API at /api/v1 with public storefront endpoints and admin-only management endpoints protected by role-based auth."
+description: "Avanzar In Time Shop REST API reference. All business endpoints live at /api/v1, split into public storefront routes and admin-only management endpoints."
 ---
 
 The Avanzar In Time Shop backend is a Hono v4 REST API running on Bun. Every response body is JSON — successes and errors alike follow a consistent shape. All business endpoints live under the `/api/v1` prefix so the version can evolve independently. An interactive Swagger UI is available at `/api/v1/docs` and the raw OpenAPI spec is served at `/api/v1/openapi.json`, making it easy to explore and test every route without leaving the browser.
@@ -96,6 +96,7 @@ All responses use a consistent JSON envelope so client code can handle them unif
 | `409 Conflict` | Duplicate | Slug already taken, duplicate price currency for a product, or double payment confirmation |
 | `422 Unprocessable Entity` | Business rule violation | Invalid order status transition, insufficient stock at checkout |
 | `503 Service Unavailable` | Temporary failure | Order number collision after maximum retry attempts |
+| `500 Internal Server Error` | Unexpected error | An unhandled exception was caught by the global error handler |
 
 ## Healthcheck
 

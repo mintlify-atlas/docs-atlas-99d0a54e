@@ -1,7 +1,7 @@
 ---
-title: "Get Started with Avanzar In Time Shop"
+title: "Avanzar In Time Shop: Local Development Quickstart"
 sidebarTitle: "Quickstart"
-description: "Set up the full Avanzar In Time Shop stack locally — database, backend, admin dashboard, and storefront — in under 10 minutes."
+description: "Set up the full Avanzar In Time Shop stack locally — PostgreSQL, backend API, admin dashboard, and Astro storefront — in under 10 minutes."
 ---
 
 This quickstart walks you through cloning the repository, configuring your environment, spinning up the PostgreSQL database via Docker, running migrations, seeding an admin user, and launching all three apps together. By the end you will have the backend API, admin dashboard, and public storefront running locally and ready for development.
@@ -82,13 +82,19 @@ This quickstart walks you through cloning the repository, configuring your envir
   </Step>
 
   <Step title="Create an admin user">
-    Seed the initial admin account using the bootstrap script:
+    Seed the initial admin account using the bootstrap script. Run it from the monorepo root via the workspace filter:
 
     ```bash
-    bun run seed:admin
+    bun run --filter '@avanzar/backend' seed:admin
     ```
 
-    This executes `apps/backend/src/scripts/create-admin.ts` and creates a user with the `admin` role. Follow the prompts in your terminal to set the email and password.
+    Alternatively, run it directly from the backend directory:
+
+    ```bash
+    cd apps/backend && bun run seed:admin
+    ```
+
+    This executes `apps/backend/src/scripts/create-admin.ts` via `bun run --env-file=../../.env`, creates a user through Better Auth, and promotes it to the `admin` role. Follow the interactive prompts in your terminal to set the name, email, and password. The script is idempotent — if the email already exists it will only update the role.
   </Step>
 
   <Step title="Start all apps">

@@ -1,5 +1,5 @@
 ---
-title: "Monorepo Architecture and App Structure"
+title: "Avanzar In Time Shop: Monorepo Architecture Overview"
 sidebarTitle: "Architecture"
 description: "Avanzar In Time Shop is organized as a Bun monorepo with three apps and two shared packages, each with a clearly defined responsibility boundary."
 ---
@@ -134,7 +134,7 @@ app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 Session state is maintained via **HTTP-only cookies**. The backend defines two Hono middleware helpers used throughout protected routes:
 
 - **`requireSession`** — verifies that a valid session cookie is present and injects the authenticated user object into the Hono context. Returns `401` if no session is found.
-- **`requireAdmin`** — extends `requireSession` and additionally checks that the user's role is `admin` or `staff`. Returns `403` for authenticated users without sufficient privileges.
+- **`requireAdmin`** — independently verifies the session and additionally checks that the user's role is `admin` or `staff` (via `isAdminRole` from `@avanzar/shared`). Returns `401` if no session is found, `403` for authenticated users without sufficient privileges.
 
 The three roles and their intended scopes:
 

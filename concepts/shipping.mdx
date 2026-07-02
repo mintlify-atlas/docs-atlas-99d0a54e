@@ -1,7 +1,7 @@
 ---
-title: "Province-Based Shipping Rates and Checkout"
+title: "Province-Based Shipping Rates, Totals, and Address Book"
 sidebarTitle: "Shipping"
-description: "Shipping rates in Avanzar are configured per province and currency. The checkout service looks up the rate for the recipient's province before computing order totals."
+description: "Shipping rates in Avanzar map each province and currency to a flat fee. The checkout service resolves the rate and computes all order totals server-side."
 ---
 
 Avanzar In Time Shop uses a province-based lookup table for shipping costs, designed around Cuba's geographic and administrative structure. Rather than a complex real-time carrier integration, each combination of destination province and billing currency maps to a flat rate stored in the `shipping_rates` table. At checkout, the backend resolves the correct rate automatically from the recipient's declared province and the order currency.
@@ -86,10 +86,10 @@ Recipient fields on the `orders` table:
 
 ## Order Totals
 
-Order totals are computed server-side by `computeOrderTotals` from `@avanzar/shared` and stored as four integer fields on the `orders` row:
+Order totals are computed server-side by `computeOrderTotals` from the backend checkout service and stored as four integer fields on the `orders` row:
 
 ```typescript
-// packages/shared/src/checkout.ts
+// apps/backend/src/services/checkout.ts
 export function computeOrderTotals(
   lines: CheckoutLine[],
   shippingMinor: number,

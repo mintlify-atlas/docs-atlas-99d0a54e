@@ -1,7 +1,7 @@
 ---
 title: "Admin Payments API — Manual Payment Confirmation"
 sidebarTitle: "Payments"
-description: "Admin endpoints for listing payments and confirming manual transfers. Confirming a payment atomically promotes the linked order from pending_payment to paid."
+description: "Admin endpoints for listing payments and confirming manual transfers. Confirmation atomically promotes the linked order from pending_payment to paid."
 ---
 
 Admin payment management is central to the manual confirmation workflow used by Avanzar In Time Shop. Because the store accepts manual payment methods — Zelle transfers, local bank transfers, and cash on delivery — staff must verify that a payment was received and confirm it with a reference number before the order moves to fulfillment. The confirm endpoint handles both the payment update and the order status promotion atomically, preventing duplicate confirmations even under concurrent admin activity.

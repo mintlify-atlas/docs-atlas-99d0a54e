@@ -1,5 +1,5 @@
 ---
-title: "Customer Orders API — View Your Order History"
+title: "Customer Orders API — View Your Full Order History"
 sidebarTitle: "Orders"
 description: "GET /api/v1/orders and GET /api/v1/orders/:id — authenticated endpoints to view the current user's order history with items and payments."
 ---
@@ -29,7 +29,7 @@ curl https://api.avanzarintimeshop.com/api/v1/orders \
       Unique order identifier.
     </ResponseField>
     <ResponseField name="orderNumber" type="string">
-      Human-readable order reference (e.g., `"ORD-20241115-A3F2"`). Unique across all orders.
+      Human-readable order reference in the format `AVZ-YYYYMMDD-XXXX` (e.g., `"AVZ-20241115-3742"`). Unique across all orders.
     </ResponseField>
     <ResponseField name="userId" type="string">
       The authenticated user's ID. Always present on orders returned by this endpoint.
@@ -92,7 +92,7 @@ curl https://api.avanzarintimeshop.com/api/v1/orders \
   "orders": [
     {
       "id": "ord-0001-0000-0000-0000-000000000001",
-      "orderNumber": "ORD-20241115-A3F2",
+      "orderNumber": "AVZ-20241115-3742",
       "userId": "user-abc123",
       "status": "paid",
       "currency": "USD",
@@ -186,7 +186,7 @@ curl https://api.avanzarintimeshop.com/api/v1/orders/ord-0001-0000-0000-0000-000
 {
   "order": {
     "id": "ord-0001-0000-0000-0000-000000000001",
-    "orderNumber": "ORD-20241115-A3F2",
+    "orderNumber": "AVZ-20241115-3742",
     "userId": "user-abc123",
     "status": "shipped",
     "currency": "USD",

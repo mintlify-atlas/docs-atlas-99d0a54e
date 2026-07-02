@@ -1,7 +1,7 @@
 ---
 title: "Admin Orders API — Order Management and Status Updates"
 sidebarTitle: "Orders"
-description: "Admin endpoints for listing and managing orders. The PATCH status endpoint enforces the state machine, audit history, and automatically restores stock on cancellation."
+description: "Admin endpoints for listing and managing orders. Enforces a strict status state machine, appends audit history, and restores stock on cancellation."
 ---
 
 The admin orders API provides full visibility into every order placed across all customer accounts. Admins and staff can list, inspect, and advance orders through their lifecycle using the status update endpoint. Status transitions are enforced server-side via a strict state machine — invalid transitions are rejected with a descriptive 422 response. All status changes are recorded in an append-only `statusHistory` table for audit purposes, and cancellations automatically restore stock for affected products.
@@ -37,11 +37,23 @@ Returns all orders across all customers, ordered by `createdAt` descending (newe
   "orders": [
     {
       "id": "ord-aabb1122-3344-5566-7788-99aabbccddee",
+      "orderNumber": "ORD-20240601-0001",
       "userId": "usr-11223344-aabb-ccdd-eeff-001122334455",
       "status": "paid",
-      "province": "Miranda",
-      "shippingAmountMinor": 500,
       "currency": "USD",
+      "buyerName": "Luis Martínez",
+      "buyerEmail": "luis@example.com",
+      "buyerPhone": "+58-412-0000000",
+      "shipRecipient": "María Martínez",
+      "shipPhone": "+53-5-0000000",
+      "shipProvince": "La Habana",
+      "shipMunicipality": "Centro Habana",
+      "shipAddressLine": "Calle Obispo 123, Apto 4",
+      "shipReference": "Edificio azul, frente al parque",
+      "subtotalMinor": 18500,
+      "shippingMinor": 500,
+      "discountMinor": 0,
+      "totalMinor": 19000,
       "createdAt": "2024-06-01T14:00:00.000Z",
       "updatedAt": "2024-06-01T15:30:00.000Z",
       "items": [
@@ -52,6 +64,7 @@ Returns all orders across all customers, ordered by `createdAt` descending (newe
           "productName": "Reloj Automático Seiko",
           "quantity": 1,
           "unitAmountMinor": 18500,
+          "lineTotalMinor": 18500,
           "currency": "USD"
         }
       ],
@@ -88,11 +101,23 @@ Fetches a single order with full relations: `items`, `payments`, and `statusHist
 {
   "order": {
     "id": "ord-aabb1122-3344-5566-7788-99aabbccddee",
+    "orderNumber": "ORD-20240601-0001",
     "userId": "usr-11223344-aabb-ccdd-eeff-001122334455",
     "status": "preparing",
-    "province": "Miranda",
-    "shippingAmountMinor": 500,
     "currency": "USD",
+    "buyerName": "Luis Martínez",
+    "buyerEmail": "luis@example.com",
+    "buyerPhone": "+58-412-0000000",
+    "shipRecipient": "María Martínez",
+    "shipPhone": "+53-5-0000000",
+    "shipProvince": "La Habana",
+    "shipMunicipality": "Centro Habana",
+    "shipAddressLine": "Calle Obispo 123, Apto 4",
+    "shipReference": "Edificio azul, frente al parque",
+    "subtotalMinor": 18500,
+    "shippingMinor": 500,
+    "discountMinor": 0,
+    "totalMinor": 19000,
     "createdAt": "2024-06-01T14:00:00.000Z",
     "updatedAt": "2024-06-01T16:00:00.000Z",
     "items": [ { "..." : "..." } ],
@@ -150,13 +175,13 @@ The following transitions are permitted. Any other combination returns **422 INV
 
 | From              | Allowed `to` values              |
 |-------------------|----------------------------------|
-| `pending_payment` | `paid`                           |
+| `pending_payment` | `paid`, `cancelled`              |
 | `paid`            | `preparing`, `cancelled`         |
 | `preparing`       | `shipped`, `cancelled`           |
-| `shipped`         | `delivered`, `cancelled`         |
+| `shipped`         | `delivered`                      |
 
 <Info>
-  `delivered` and `cancelled` are terminal states — no further transitions are permitted from them.
+  `delivered` and `cancelled` are terminal states — no further transitions are permitted from them. Note that once an order is `shipped`, it can no longer be cancelled — only delivery is allowed from that state.
 </Info>
 
 **Example Request**

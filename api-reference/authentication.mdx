@@ -1,7 +1,7 @@
 ---
-title: "API Authentication with Better Auth Sessions"
+title: "Avanzar In Time Shop – API Session Authentication"
 sidebarTitle: "Authentication"
-description: "Avanzar uses Better Auth for session-based authentication via HTTP cookies. Sign in to get a session cookie, then include it automatically in subsequent requests."
+description: "Avanzar In Time Shop uses Better Auth for cookie-based auth. Sign in once to receive a session cookie included automatically in every subsequent request."
 ---
 
 Avanzar delegates all authentication to [Better Auth](https://better-auth.com), which exposes its own handler at `/api/auth/*`. Authentication is **cookie-based**, not token-based — there are no `Authorization: Bearer` headers. When a user signs in, Better Auth sets an HTTP session cookie that the browser (or HTTP client) attaches automatically to every subsequent request. Because the API enables `credentials: true` in its CORS configuration, clients must also send credentials with cross-origin requests.

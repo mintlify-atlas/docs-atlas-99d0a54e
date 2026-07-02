@@ -1,7 +1,7 @@
 ---
 title: "Admin Products API — Catalog Management Endpoints"
 sidebarTitle: "Products"
-description: "Admin endpoints for managing the product catalog: CRUD for products, plus nested endpoints for prices, images, and category links. Requires admin or staff role."
+description: "Admin endpoints for managing the product catalog: CRUD, plus nested sub-endpoints for prices, images, and category links. Requires admin or staff role."
 ---
 
 The admin products API gives staff full control over the product catalog. All three lifecycle statuses — `draft`, `active`, and `archived` — are visible and manageable here, unlike the public storefront which only serves `active` products. Beyond core CRUD, each product exposes nested sub-endpoints for managing prices (one per currency), images (ordered by position), and category links (the many-to-many join). Hard deletion of products is intentionally unsupported; use the archive endpoint instead.

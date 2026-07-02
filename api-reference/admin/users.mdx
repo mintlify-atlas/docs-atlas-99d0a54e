@@ -1,7 +1,7 @@
 ---
 title: "Admin Users API — User Listing and Role Management"
 sidebarTitle: "Users"
-description: "Admin endpoints for listing users and updating roles. Only non-sensitive fields are returned. Admins cannot demote themselves to prevent accidental lockout."
+description: "Admin endpoints for listing users and updating roles. Only safe fields are returned. Admins cannot demote themselves to prevent accidental lockout."
 ---
 
 The admin users API exposes a safe, read-optimized view of the customer and staff base, as well as the ability to promote or demote user roles. Password hashes, session tokens, and other sensitive auth fields are never included in responses — only the seven safe columns selected server-side. Role management allows you to onboard new staff, revoke access, and promote trusted customers to admin, all from a single endpoint.
